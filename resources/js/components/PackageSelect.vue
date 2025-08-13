@@ -17,6 +17,7 @@ const {
   param,
   start_time,
   end_time,
+  fetchUserByPhone
 } = useBooking();
 
 function formatVietnamDatetime(date) {
@@ -43,6 +44,7 @@ onMounted(async () => {
   await fetchTables();
   await fetchPackages();
   selectTableFromUrl();
+  fetchUserByPhone(param.get('phone'));
 });
 
 function goNext() {

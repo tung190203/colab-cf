@@ -5,6 +5,7 @@ import ExtrasSelect from '../components/ExtrasSelect.vue';
 import BookingSummary from '../components/BookingSummary.vue';
 import StatusPage from '../components/StatusPage.vue';
 import VietQRPage from '../components/VietQRPage.vue';
+import Information from '../components/Information.vue';
 
 const routes = [
   { path: '/', component: PackageSelect, name: 'PackageSelect' },
@@ -13,6 +14,7 @@ const routes = [
   { path: '/summary', component: BookingSummary, name: 'BookingSummary' },
   { path: '/status', component: StatusPage, name: 'StatusPage' },
   { path: '/transfer/:bookingId', component: VietQRPage, name: 'VietQRPage' },
+  { path: '/information', component: Information, name: 'Information' },
 ];
 
 const router = createRouter({

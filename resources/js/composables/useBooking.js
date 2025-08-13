@@ -13,6 +13,11 @@ const packages = ref({});
 const tables = ref([]);
 const start_time = ref(null);
 const end_time = ref(null);
+const name = ref(null);
+const phone = ref(null);
+
+name.value = sessionStorage.getItem('customer_name') || null;
+phone.value = sessionStorage.getItem('customer_phone') || null;
 
 start_time.value = sessionStorage.getItem(START_TIME_KEY) || null;
 end_time.value = sessionStorage.getItem(END_TIME_KEY) || null;
@@ -32,6 +37,22 @@ watch(end_time, (val) => {
     sessionStorage.removeItem(END_TIME_KEY);
   }
 });
+
+watch(name, (val) => {
+  if (val) {
+    sessionStorage.setItem('customer_name', val);
+  } else {
+    sessionStorage.removeItem('customer_name');
+  }
+});
+watch(phone, (val) => {
+  if (val) {
+    sessionStorage.setItem('customer_phone', val);
+  } else {
+    sessionStorage.removeItem('customer_phone');
+  }
+}
+);
 
 // Khôi phục từ sessionStorage hoặc mặc định ban đầu
 const selectedPackage = ref(
@@ -152,6 +173,8 @@ function resetAll() {
   });
   start_time.value = null;
   end_time.value = null;
+  name.value = null;
+  phone.value = null;
   // Xoá sessionStorage khi reset
   sessionStorage.removeItem(STORAGE_KEYS.selectedPackage);
   sessionStorage.removeItem(STORAGE_KEYS.selectedTable);
@@ -211,6 +234,25 @@ async function fetchServices() {
     });
   } catch (error) {
     console.error('Error loading services:', error);
+  }
+}
+
+async function fetchUserByPhone(phoneParam) {
+  if( !phoneParam) return;
+  try {
+    const res = await fetch('/api/detail-user',{
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ phoneParam })
+    });
+    if (!res.ok) throw new Error('Không tìm thấy người dùng');
+    const data = await res.json();
+    name.value = data.user?.name ?? null;
+    phone.value = data.user?.phone ?? null;
+  } catch (error) {
+    throw new Error(`Error fetching user by phone: ${error.message}`);
   }
 }
 
@@ -323,5 +365,8 @@ export function useBooking() {
     filteredTables,
     start_time,
     end_time,
+    name,
+    phone,
+    fetchUserByPhone
   };
 }

@@ -13,6 +13,8 @@ const {
   formatVND,
   start_time,
   end_time,
+  name,
+  phone
 } = useBooking();
 
 function toVietnamDatetime(localDateTimeStr) {
@@ -32,6 +34,8 @@ async function pay(method) {
         quantity: e.quantity || 1,
       })),
       payment_method: method,
+      customer_name: name.value,
+      customer_phone: phone.value,
     };
 
     const res = await fetch('/api/booking', {
@@ -108,7 +112,7 @@ function goBack() {
         </div>
       </div>
 
-      <div class="d-flex justify-content-between mb-2 text-muted">
+      <div class="d-flex justify-content-between mb-2">
         <div>Ngày</div>
         <div>
           <template v-if="start_time && end_time">
@@ -116,6 +120,14 @@ function goBack() {
           </template>
           <template v-else>-</template>
         </div>
+      </div>
+      <div class="d-flex justify-content-between mb-2">
+        <div>Người đặt</div>
+        <div>{{ name }}</div>
+      </div>
+      <div class="d-flex justify-content-between mb-2">
+        <div>SĐT</div>
+        <div>{{ phone }}</div>
       </div>
       <div class="d-flex justify-content-between mb-2">
         <div>Giá tiền</div>

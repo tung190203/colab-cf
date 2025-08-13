@@ -6,6 +6,7 @@ use App\Models\Booking;
 use App\Models\Table;
 use App\Models\Package;
 use App\Models\Extra;
+use App\Models\User;
 use App\Services\MomoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -24,6 +25,8 @@ class BookingController extends Controller
             'extras.*.id' => 'exists:extras,id',
             'extras.*.quantity' => 'integer|min:1',
             'payment_method' => 'required|in:momo,card,none,cash,transfer',
+            'customer_name' => 'required|string|max:255',
+            'customer_phone' => 'required|string|max:15',
         ]);
 
         $startTime = isset($validated['start_time']) 
@@ -83,6 +86,13 @@ class BookingController extends Controller
         // Tạo booking
         DB::beginTransaction();
         try {
+            $findUser = User::where('phone', $validated['customer_phone'])->first();
+
+            $user = $findUser ?? User::create([
+                'name' => $validated['customer_name'],
+                'phone' => $validated['customer_phone'],
+            ]);
+            
             $booking = Booking::create([
                 'package_id'     => $validated['package_id'],
                 'table_id'       => $tableId,
@@ -91,6 +101,7 @@ class BookingController extends Controller
                 'total_price'    => $total,
                 'payment_method' => $validated['payment_method'],
                 'status'         => $status,
+                'user_id'        => $user->id,
             ]);
 
             if (!empty($serviceQuantities)) {
@@ -270,5 +281,20 @@ class BookingController extends Controller
             'message' => 'Ảnh xác nhận đã được lưu',
             'path' => $path
         ]);
+    }
+
+    public function detailUser(Request $request)
+    {
+        $request->validate([
+            'phoneParam' => 'required|string|max:15',
+        ]);
+
+        $user = User::where('phone', $request->phoneParam)->first();
+
+        if (!$user) {
+            return response()->json(['message' => 'Người dùng không tồn tại'], 404);
+        }
+
+        return response()->json(['user' => $user]);
     }
 }

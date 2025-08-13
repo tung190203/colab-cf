@@ -10,3 +10,4 @@ Route::get('/tables',[BookingController::class, 'tables']);
 Route::get('/booking/{booking}/vietqr', [BookingController::class, 'getVietQR']);
 Route::post('/booking/upload-proof', [BookingController::class, 'uploadProof']);
 Route::post('/momo/callback', [BookingController::class, 'handleMomoCallback']);
+Route::post('/detail-user', [BookingController::class, 'detailUser']);

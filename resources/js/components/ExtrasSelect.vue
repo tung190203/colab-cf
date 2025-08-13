@@ -39,7 +39,14 @@ function toggleCategory(category) {
 }
 
 function goNext() {
-  router.push('/summary');
+  const customerName = sessionStorage.getItem('customer_name');
+  const customerPhone = sessionStorage.getItem('customer_phone');
+
+  if (customerName && customerPhone) {
+    router.push('/summary');
+  } else {
+    router.push('/information');
+  }
 }
 
 function goBack() {

@@ -189,4 +189,27 @@ function goBack() {
 .legend-box.free { background: #ccc; }
 .legend-box.selected { background: #28a745; }
 .legend-box.occupied { background: #dc3545; }
+.popup-content {
+  width: 90%;          /* chiếm 90% chiều ngang màn hình */
+  max-width: 400px;    /* không vượt quá 400px trên màn hình lớn */
+  margin: auto;
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  background: white;
+  max-height: 90vh;    /* không vượt quá 90% chiều cao viewport */
+  overflow-y: auto;    /* nếu nội dung cao hơn sẽ scroll bên trong */
+}
+@media (max-width: 480px) {
+  .popup-content {
+    padding: 1rem;
+  }
+  .popup-content h5 {
+    font-size: 1.1rem;
+  }
+  .popup-content .form-control {
+    font-size: 0.9rem;
+  }
+}
+
 </style>

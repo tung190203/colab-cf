@@ -7,8 +7,7 @@ import StatusPage from '../components/StatusPage.vue';
 import VietQRPage from '../components/VietQRPage.vue';
 
 const routes = [
-  { path: '/', redirect: '/package', name: 'HomeRedirect' },
-  { path: '/package', component: PackageSelect, name: 'PackageSelect' },
+  { path: '/', component: PackageSelect, name: 'PackageSelect' },
   { path: '/table', component: TableSelect, name: 'TableSelect' },
   { path: '/extras', component: ExtrasSelect, name: 'ExtrasSelect' },
   { path: '/summary', component: BookingSummary, name: 'BookingSummary' },

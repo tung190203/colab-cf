@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBooking } from '../composables/useBooking';
 
@@ -14,13 +14,28 @@ const {
   formatVND,
 } = useBooking();
 
-onMounted(async() => {
+const openCategories = ref({});
+
+onMounted(async () => {
   await fetchServices();
 });
+
+watch(services, (newServices) => {
+  const keys = Object.keys(newServices);
+  if (keys.length > 0) {
+    keys.forEach((category, index) => {
+      openCategories.value[category] = index === 0; // mở category đầu tiên
+    });
+  }
+}, { immediate: true });
 
 function canEditQuantity(category) {
   const noQuantityCategories = ['meeting_room', 'vip_room'];
   return !noQuantityCategories.includes(category);
+}
+
+function toggleCategory(category) {
+  openCategories.value[category] = !openCategories.value[category];
 }
 
 function goNext() {
@@ -34,9 +49,41 @@ function goBack() {
 
 <template>
   <div>
+    <div class="fs-6 mb-4 text-danger">Dịch vụ thêm, không bao gồm gói đã chọn.</div>
     <div v-for="(items, category) in services" :key="category" class="mb-4">
-      <h5 class="mb-3 fw-semibold">{{ formatCategoryName(category) }}</h5>
-      <div>
+      <h5
+  class="mb-3 fw-semibold cursor-pointer d-flex justify-content-between align-items-center"
+  @click="toggleCategory(category)"
+>
+  {{ formatCategoryName(category) }}
+
+  <svg
+    v-if="openCategories[category]"
+    xmlns="http://www.w3.org/2000/svg"
+    width="16"
+    height="16"
+    fill="currentColor"
+    class="bi bi-chevron-up"
+    viewBox="0 0 16 16"
+  >
+    <path fill-rule="evenodd" d="M4.646 10.854a.5.5 0 0 0 .708 0L8 8.207l2.646 2.647a.5.5 0 0 0 .708-.708l-3-3a.5.5 0 0 0-.708 0l-3 3a.5.5 0 0 0 0 .708z"/>
+  </svg>
+
+  <svg
+    v-else
+    xmlns="http://www.w3.org/2000/svg"
+    width="16"
+    height="16"
+    fill="currentColor"
+    class="bi bi-chevron-down"
+    viewBox="0 0 16 16"
+  >
+    <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
+  </svg>
+</h5>
+
+
+      <div v-show="openCategories[category]">
         <div
           v-for="item in items"
           :key="item.id"

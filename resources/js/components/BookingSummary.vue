@@ -11,14 +11,22 @@ const {
   extras,
   total,
   formatVND,
+  start_time,
+  end_time,
 } = useBooking();
+
+function toVietnamDatetime(localDateTimeStr) {
+  const [date, time] = localDateTimeStr.split('T');
+  return `${date} ${time}:00`;
+}
 
 async function pay(method) {
   try {
     const payload = {
       package_id: selectedPackage.value.id,
       table: selectedTable.value,
-      end_time: new Date(Date.now() + selectedPackage.value.duration * 60000).toISOString(),
+      start_time: toVietnamDatetime(start_time.value),
+      end_time: toVietnamDatetime(end_time.value),
       extras: extras.value.map((e) => ({
         id: e.id,
         quantity: e.quantity || 1,
@@ -33,7 +41,7 @@ async function pay(method) {
     });
 
     if (!res.ok) {
-      // Thử đọc lỗi backend trả về
+      console.error('Payment error:', res.status, res.statusText);
       let errorMessage = `Lỗi thanh toán (status ${res.status})`;
       try {
         const errorData = await res.json();
@@ -61,8 +69,17 @@ async function pay(method) {
 
   } catch (error) {
     console.error('Payment error:', error);
-    // toast.error(`Thanh toán thất bại: ${error.message || 'Vui lòng thử lại sau'}`);
   }
+}
+
+function formatTimeRange(start, end) {
+  const o = { hour: 'numeric', minute: '2-digit', hour12: true };
+  const s = new Date(start), e = new Date(end);
+
+  const timeRange = `${s.toLocaleTimeString('en-US', o)} - ${e.toLocaleTimeString('en-US', o)}`;
+  const day = s.toLocaleDateString('vi-VN');
+
+  return { timeRange, day };
 }
 
 function goBack() {
@@ -75,18 +92,37 @@ function goBack() {
     <div class="card p-4 mb-4 shadow-sm">
       <div class="d-flex justify-content-between mb-2">
         <div>Gói</div>
-        <div class="fw-semibold">{{ selectedPackage?.name ?? '-' }}</div>
+        <div>{{ selectedPackage?.name ?? '-' }}</div>
       </div>
       <div class="d-flex justify-content-between mb-2">
         <div>Bàn</div>
-        <div class="fw-semibold">{{ selectedTable ?? '-' }}</div>
+        <div>{{ selectedTable ?? '-' }}</div>
+      </div>
+      <div class="d-flex justify-content-between mb-2">
+        <div>Thời gian</div>
+        <div>
+          <template v-if="start_time && end_time">
+            {{ formatTimeRange(start_time, end_time).timeRange }}
+          </template>
+          <template v-else>-</template>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-between mb-2 text-muted">
+        <div>Ngày</div>
+        <div>
+          <template v-if="start_time && end_time">
+            {{ formatTimeRange(start_time, end_time).day }}
+          </template>
+          <template v-else>-</template>
+        </div>
+      </div>
+      <div class="d-flex justify-content-between mb-2">
+        <div>Giá tiền</div>
+        <div>{{ formatVND(selectedPackage?.price) ?? '-' }}</div>
       </div>
       <div v-if="extras.length" class="mb-2">
-        <div
-          v-for="(e, i) in extras"
-          :key="i"
-          class="d-flex justify-content-between border-top pt-2 mt-2"
-        >
+        <div v-for="(e, i) in extras" :key="i" class="d-flex justify-content-between border-top pt-2 mt-2">
           <div>{{ e.name }} x{{ e.quantity }}</div>
           <div>{{ formatVND(e.price * e.quantity) }}</div>
         </div>

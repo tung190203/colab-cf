@@ -30,7 +30,7 @@ class CreateBookingSystemTables extends Migration
         Schema::create('bookings', function (Blueprint $table) {
             $table->id();
             $table->foreignId('package_id')->constrained('packages')->cascadeOnDelete();
-            $table->foreignId('table_id')->constrained('tables')->cascadeOnDelete();
+            $table->foreignId('table_id')->nullable()->constrained('tables')->cascadeOnDelete();
             $table->timestamp('start_time')->useCurrent();
             $table->timestamp('end_time')->nullable();
             $table->integer('total_price'); // tổng tiền

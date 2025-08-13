@@ -17,7 +17,8 @@ class BookingController extends Controller
     {
         $validated = $request->validate([
             'package_id' => 'required|exists:packages,id',
-            'table' => 'required|exists:tables,code',
+            'table' => 'nullable|exists:tables,code',
+            'start_time' => 'nullable|date',
             'end_time' => 'required|date|after:now',
             'extras' => 'array',
             'extras.*.id' => 'exists:extras,id',
@@ -25,24 +26,28 @@ class BookingController extends Controller
             'payment_method' => 'required|in:momo,card,none,cash,transfer',
         ]);
 
-        $selectedTable = Table::where('code', $validated['table'])->first();
-        $tableId = $selectedTable->id;
-        $startTime = now();
+        $startTime = isset($validated['start_time']) 
+        ? Carbon::parse($validated['start_time']) 
+        : now();
 
-        // Kiểm tra trùng lịch
-        $conflict = Booking::where('table_id', $tableId)
-            ->where('status', 'confirmed')
-            ->where(function ($query) use ($startTime, $validated) {
-                $query->whereBetween('start_time', [$startTime, $validated['end_time']])
-                    ->orWhereBetween('end_time', [$startTime, $validated['end_time']])
-                    ->orWhere(function ($q) use ($startTime, $validated) {
-                        $q->where('start_time', '<=', $startTime)
-                            ->where('end_time', '>=', $validated['end_time']);
-                    });
-            })->exists();
+        if($validated['table']) {
+            $selectedTable = Table::where('code', $validated['table'])->first();
+            $tableId = $selectedTable->id;
+            // Kiểm tra trùng lịch
+            $conflict = Booking::where('table_id', $tableId)
+                ->where('status', ['confirmed','pending'])
+                ->where(function ($query) use ($startTime, $validated) {
+                    $query->whereBetween('start_time', [$startTime, $validated['end_time']])
+                        ->orWhereBetween('end_time', [$startTime, $validated['end_time']])
+                        ->orWhere(function ($q) use ($startTime, $validated) {
+                            $q->where('start_time', '<=', $startTime)
+                                ->where('end_time', '>=', $validated['end_time']);
+                        });
+                })->exists();
 
-        if ($conflict) {
-            return response()->json(['message' => 'Bàn đã được đặt trong khoảng thời gian này'], 422);
+            if ($conflict) {
+                return response()->json(['message' => 'Bàn đã được đặt trong khoảng thời gian này'], 422);
+            }
         }
 
         // Tính tổng tiền
@@ -95,6 +100,13 @@ class BookingController extends Controller
             if ($validated['payment_method'] !== 'momo' && $validated['payment_method'] !== 'transfer') {
                 $selectedTable->status = 'occupied';
                 $selectedTable->save();
+                if($selectedTable->code == 'C1') {
+                    $listTableOccupied = Table::whereIn('code', ['C2', 'C3'])->get();
+                    foreach ($listTableOccupied as $table) {
+                        $table->status = 'occupied';
+                        $table->save();
+                    }
+                }
             }
 
             DB::commit();
@@ -144,6 +156,13 @@ class BookingController extends Controller
             $booking->status = 'confirmed';
             $booking->table->status = 'occupied';
             $booking->table->save();
+            if($booking->table->code == 'C1') {
+                $listTableOccupied = Table::whereIn('code', ['C2', 'C3'])->get();
+                foreach ($listTableOccupied as $table) {
+                    $table->status = 'occupied';
+                    $table->save();
+                }
+            }
         } else {
             $booking->status = 'cancelled';
         }
@@ -177,7 +196,20 @@ class BookingController extends Controller
 
     public function packages()
     {
-        $packages = Package::orderBy('duration', 'asc')->get();
+        $packages = Package::get()
+            ->groupBy('category')
+            ->map(function ($items) {
+                return $items->map(function ($item) {
+                    return [
+                        'id' => $item->id,
+                        'name' => $item->name,
+                        'price' => $item->price,
+                        'category' => $item->category,
+                        'duration' => $item->duration,
+                        'duration_label' => $item->duration_label,
+                    ];
+                })->values();
+            });
         return response()->json($packages);
     }
 
@@ -226,6 +258,13 @@ class BookingController extends Controller
         $booking->status = 'confirmed';
         $booking->table->status = 'occupied';
         $booking->save();
+        if($booking->table->code == 'C1') {
+            $listTableOccupied = Table::whereIn('code', ['C2', 'C3'])->get();
+            foreach ($listTableOccupied as $table) {
+                $table->status = 'occupied';
+                $table->save();
+            }
+        }
 
         return response()->json([
             'message' => 'Ảnh xác nhận đã được lưu',

@@ -10,22 +10,48 @@ const {
   selectPackage,
   fetchPackages,
   fetchTables,
-    formatVND,
-    selectTableFromUrl,
-    selectedTable,
+  formatVND,
+  selectTableFromUrl,
+  selectedTable,
+  formatCategoryName,
+  param,
+  start_time,
+  end_time,
 } = useBooking();
 
-onMounted(async() => {
-  await fetchPackages();
+function formatVietnamDatetime(date) {
+  const pad = n => String(n).padStart(2,'0');
+  const yyyy = date.getFullYear();
+  const MM = pad(date.getMonth() + 1);
+  const dd = pad(date.getDate());
+  const hh = pad(date.getHours());
+  const mm = pad(date.getMinutes());
+  return `${yyyy}-${MM}-${dd}T${hh}:${mm}`;
+}
+
+function setDefaultTimes() {
+  const nowVN = new Date();
+  start_time.value = formatVietnamDatetime(nowVN);
+
+  const durationMinutes = selectedPackage.value?.duration || 60;
+  const end = new Date(nowVN.getTime() + durationMinutes*60000);
+  end_time.value = formatVietnamDatetime(end);
+}
+
+
+onMounted(async () => {
   await fetchTables();
+  await fetchPackages();
   selectTableFromUrl();
 });
 
 function goNext() {
   if (!selectedPackage.value) return;
-  const savedTable = JSON.parse(localStorage.getItem('selectedTable'));
-  if (savedTable) {
-    selectedTable.value = savedTable;
+
+  const tableParam = param.get('table');
+  if (tableParam) {
+    selectedTable.value = tableParam;
+    setDefaultTimes();
     router.push('/extras');
   } else {
     router.push('/table');
@@ -35,24 +61,29 @@ function goNext() {
 
 <template>
   <div class="step-content">
-    <div class="row g-3">
-      <div
-        v-for="pkg in packages"
-        :key="pkg.id"
-        class="col-12 p-3 package-card cursor-pointer"
-        :class="{ 'package-card-selected': selectedPackage && selectedPackage.id === pkg.id }"
-        @click="selectPackage(pkg)"
-      >
-        <div class="d-flex justify-content-between align-items-center">
-          <div>
-            <h5 class="mb-1 fw-semibold">{{ pkg.name }}</h5>
-            <small class="text-muted !fs-6">{{ pkg.durationLabel }}</small>
+    <div v-for="(pkgList, category) in packages" :key="category" class="mb-4">
+      <h4 class="text-capitalize mb-2">{{ formatCategoryName(category) }}</h4>
+      
+      <div class="row g-3">
+        <div
+          v-for="pkg in pkgList"
+          :key="pkg.id"
+          class="col-12 p-3 package-card cursor-pointer"
+          :class="{ 'package-card-selected': selectedPackage && selectedPackage.id === pkg.id }"
+          @click="selectPackage(pkg)"
+        >
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h5 class="mb-1 fw-semibold">{{ pkg.name }}</h5>
+              <small class="text-muted !fs-6">{{ pkg.durationLabel }}</small>
+            </div>
+            <div class="fw-bold text-warning fs-5">{{ formatVND(pkg.price) }}</div>
           </div>
-          <div class="fw-bold text-warning fs-5">{{ formatVND(pkg.price) }}</div>
+          <div class="fw-light" style="font-size: 12px;">{{ pkg.duration_label }}</div>
         </div>
-        <div class="fw-light" style="font-size: 12px;">{{ pkg.duration_label }}</div>
       </div>
     </div>
+
     <button class="btn btn-warning w-100 mt-4" :disabled="!selectedPackage" @click="goNext">
       Tiếp tục
     </button>

@@ -42,7 +42,7 @@ onMounted(async () => {
 
 function goHome() {
   resetAll();
-  router.push('/package');
+  router.push('/');
 }
 </script>
 

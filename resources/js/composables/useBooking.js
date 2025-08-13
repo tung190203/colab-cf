@@ -7,20 +7,43 @@ const STORAGE_KEYS = {
   form: 'booking_form',
 };
 
-const packages = ref([]);
+const START_TIME_KEY = 'booking_start_time';
+const END_TIME_KEY = 'booking_end_time';
+const packages = ref({});
 const tables = ref([]);
+const start_time = ref(null);
+const end_time = ref(null);
 
-// Khôi phục từ localStorage hoặc mặc định ban đầu
+start_time.value = sessionStorage.getItem(START_TIME_KEY) || null;
+end_time.value = sessionStorage.getItem(END_TIME_KEY) || null;
+
+watch(start_time, (val) => {
+  if (val) {
+    sessionStorage.setItem(START_TIME_KEY, val);
+  } else {
+    sessionStorage.removeItem(START_TIME_KEY);
+  }
+});
+
+watch(end_time, (val) => {
+  if (val) {
+    sessionStorage.setItem(END_TIME_KEY, val);
+  } else {
+    sessionStorage.removeItem(END_TIME_KEY);
+  }
+});
+
+// Khôi phục từ sessionStorage hoặc mặc định ban đầu
 const selectedPackage = ref(
-  JSON.parse(localStorage.getItem(STORAGE_KEYS.selectedPackage)) || null
+  JSON.parse(sessionStorage.getItem(STORAGE_KEYS.selectedPackage)) || null
 );
 
 const selectedTable = ref(
-  JSON.parse(localStorage.getItem(STORAGE_KEYS.selectedTable)) || null
+  JSON.parse(sessionStorage.getItem(STORAGE_KEYS.selectedTable)) || null
 );
 
 const form = reactive(
-  JSON.parse(localStorage.getItem(STORAGE_KEYS.form)) || {}
+  JSON.parse(sessionStorage.getItem(STORAGE_KEYS.form)) || {}
 );
 
 const services = reactive({});
@@ -38,29 +61,29 @@ watch(
   { immediate: true }
 );
 
-// Đồng bộ thay đổi selectedPackage vào localStorage
+// Đồng bộ thay đổi selectedPackage vào sessionStorage
 watch(
   selectedPackage,
   (val) => {
-    localStorage.setItem(STORAGE_KEYS.selectedPackage, JSON.stringify(val));
+    sessionStorage.setItem(STORAGE_KEYS.selectedPackage, JSON.stringify(val));
   },
   { deep: true }
 );
 
-// Đồng bộ thay đổi selectedTable vào localStorage
+// Đồng bộ thay đổi selectedTable vào sessionStorage
 watch(
   selectedTable,
   (val) => {
-    localStorage.setItem(STORAGE_KEYS.selectedTable, JSON.stringify(val));
+    sessionStorage.setItem(STORAGE_KEYS.selectedTable, JSON.stringify(val));
   },
   { deep: true }
 );
 
-// Đồng bộ thay đổi form (extras) vào localStorage
+// Đồng bộ thay đổi form (extras) vào sessionStorage
 watch(
   form,
   (val) => {
-    localStorage.setItem(STORAGE_KEYS.form, JSON.stringify(val));
+    sessionStorage.setItem(STORAGE_KEYS.form, JSON.stringify(val));
   },
   { deep: true }
 );
@@ -127,15 +150,18 @@ function resetAll() {
       form[key] = [];
     }
   });
-  // Xoá localStorage khi reset
-  localStorage.removeItem(STORAGE_KEYS.selectedPackage);
-  localStorage.removeItem(STORAGE_KEYS.selectedTable);
-  localStorage.removeItem(STORAGE_KEYS.form);
+  start_time.value = null;
+  end_time.value = null;
+  // Xoá sessionStorage khi reset
+  sessionStorage.removeItem(STORAGE_KEYS.selectedPackage);
+  sessionStorage.removeItem(STORAGE_KEYS.selectedTable);
+  sessionStorage.removeItem(STORAGE_KEYS.form);
+  sessionStorage.removeItem(START_TIME_KEY);
+  sessionStorage.removeItem(END_TIME_KEY);
 
   fetchPackages();
   fetchTables();
   fetchServices();
-  selectTableFromUrl();
 }
 
 function formatCategoryName(key) {
@@ -164,6 +190,10 @@ function formatCategoryName(key) {
       return 'Bàn ngoài trời';
     case 'private':
       return 'Chỗ ngồi riêng tư';
+    case 'basic':
+      return 'Gói cơ bản';
+    case 'vip':
+      return 'Gói VIP';
     default:
       return 'Dịch vụ khác';
   }
@@ -189,11 +219,33 @@ async function fetchPackages() {
     const res = await fetch('/api/packages');
     if (!res.ok) throw new Error('Failed to fetch packages');
     const data = await res.json();
-    packages.value = data.map((pkg) => ({
-      ...pkg,
-      durationLabel: `${pkg.duration} phút`,
-      price: pkg.price || 0,
-    }));
+    Object.keys(packages.value).forEach((k) => delete packages.value[k]);
+    const tableCode = param.get('table');
+    let allowedCategory = null;
+    if (tableCode) {
+      const allTables = Object.entries(tables.value).flatMap(([cat, arr]) =>
+        arr.map((t) => ({ ...t, category: cat }))
+      );
+      const foundTable = allTables.find(
+        (t) => t.code.toLowerCase() === tableCode.toLowerCase()
+      );
+
+      if (foundTable) {
+        if (['vip_room', 'meeting_room'].includes(foundTable.category)) {
+          allowedCategory = 'vip';
+        } else {
+          allowedCategory = 'basic';
+        }
+      }
+    }
+    Object.entries(data).forEach(([category, list]) => {
+      if (allowedCategory && category !== allowedCategory) return;
+      packages.value[category] = list.map((pkg) => ({
+        ...pkg,
+        durationLabel: `${pkg.duration} phút`,
+        price: pkg.price || 0,
+      }));
+    });
   } catch (error) {
     console.error('Error loading packages:', error);
   }
@@ -209,6 +261,28 @@ async function fetchTables() {
     console.error('Error loading tables:', error);
   }
 }
+
+const filteredTables = computed(() => {
+  if (!selectedPackage.value) return tables.value;
+
+  const copy = JSON.parse(JSON.stringify(tables.value));
+
+  if (selectedPackage.value.category === 'basic') {
+    Object.keys(copy).forEach(cat => {
+      if (['vip_room', 'meeting_room'].includes(cat)) {
+        delete copy[cat];
+      }
+    });
+  } else if (selectedPackage.value.category === 'vip') {
+    Object.keys(copy).forEach(cat => {
+      if (!['vip_room', 'meeting_room'].includes(cat)) {
+        delete copy[cat];
+      }
+    });
+  }
+
+  return copy;
+});
 
 function selectTableFromUrl() {
   const tq = param.get('table');
@@ -246,5 +320,8 @@ export function useBooking() {
     fetchTables,
     selectTableFromUrl,
     param,
+    filteredTables,
+    start_time,
+    end_time,
   };
 }

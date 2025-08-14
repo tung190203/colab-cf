@@ -185,11 +185,9 @@ class BookingController extends Controller
 
     public function extras()
     {
+        $categories = ['services', 'office_services', 'other_services'];
         $extras = Extra::select('id', 'category', 'name', 'price')
-            ->orderByRaw("CASE
-                WHEN category IN ('prints', 'rooms') THEN 1
-                ELSE 0
-            END, category")
+            ->whereIn('category', $categories)
             ->get()
             ->groupBy('category')
             ->map(function ($items) {

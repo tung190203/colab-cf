@@ -216,7 +216,13 @@ function formatCategoryName(key) {
     case 'basic':
       return 'Gói cơ bản';
     case 'vip':
-      return 'Gói VIP';
+      return 'Đặt phòng họp';
+    case 'services':
+      return 'Dịch vụ';
+    case 'office_services':
+      return 'Dịch vụ văn phòng';
+    case 'other_services':
+      return 'Dịch vụ khác';
     default:
       return 'Dịch vụ khác';
   }

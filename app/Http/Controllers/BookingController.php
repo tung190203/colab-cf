@@ -369,11 +369,21 @@ class BookingController extends Controller
         $request->validate([
             'name' => 'required|string|max:255',
             'phone' => 'required|string|max:15',
+            'image' => 'nullable|image|max:2048',
+            'role' => 'required|string',
+            'note' => 'nullable|string',
         ]);
         $user = User::create([
             'name' => $request->name,
             'phone' => $request->phone,
+            'role' => $request->role,
+            'note' => $request->note,
         ]);
+        if ($request->hasFile('image')) {
+            $path = $request->file('image')->store('users', 'public');
+            $user->image = $path;
+            $user->save();
+        }
 
         return response()->json([
             'message' => 'Thêm thành viên thành công',
@@ -400,7 +410,7 @@ class BookingController extends Controller
 
     public function getListMembers()
     {
-        $members = User::all();
+        $members = User::all()->append('image_url');
 
         return response()->json($members);
     }
@@ -422,6 +432,9 @@ class BookingController extends Controller
         $request->validate([
             'name'  => 'required|string|max:255',
             'phone' => 'required|string|max:15',
+            'image' => 'nullable|image|max:2048',
+            'role'  => 'required|string',
+            'note'  => 'nullable|string',
         ]);
     
         $user = User::find($id);
@@ -429,14 +442,20 @@ class BookingController extends Controller
         if (!$user) {
             return response()->json(['message' => 'Không tìm thấy thành viên'], 404);
         }
-    
         $user->name  = $request->name;
         $user->phone = $request->phone;
+        $user->role  = $request->role;
+        $user->note  = $request->note;
+        if ($request->hasFile('image')) {
+            $path = $request->file('image')->store('users', 'public');
+            $user->image = $path;
+        }
+
         $user->save();
     
         return response()->json([
             'message' => 'Cập nhật thành viên thành công',
-            'user'    => $user
+            'user'    => $user->append('image_url'),
         ]);
-    }    
+    }
 }

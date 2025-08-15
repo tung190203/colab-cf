@@ -9,7 +9,7 @@ const selectedBooking = ref(null);
 const notificationSound = ref(null);
 let modalInstance = null;
 const currentPage = ref(1);
-const itemsPerPage = 6;
+const itemsPerPage = 30;
 const totalPages = computed(() => Math.ceil(bookingList.value.length / itemsPerPage));
 const paginatedBookingList = computed(() => {
   const start = (currentPage.value - 1) * itemsPerPage;

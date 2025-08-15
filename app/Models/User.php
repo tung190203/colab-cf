@@ -20,6 +20,9 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'phone',
+        'image',
+        'role',
+        'note',
         'email',
         'password',
     ];
@@ -46,4 +49,10 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    public function getImageUrlAttribute()
+{
+    return $this->image ? asset('storage/' . $this->image) : null;
+}
+
 }

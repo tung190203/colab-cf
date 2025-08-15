@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router';
 
 const route = useRoute();
 const showGreeting = computed(() => {
-  const hidePaths = ['/status', '/new-bookings', '/add-member'];
+  const hidePaths = ['/status', '/new-bookings', '/add-member', '/list-member'];
   const hideNames = ['VietQRPage'];
   return !hidePaths.includes(route.path) && !hideNames.includes(route.name);
 });

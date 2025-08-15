@@ -345,17 +345,28 @@ async function fetchListBooking() {
   }
 }
 
-async function addMemberToColab(name, phone) {
-  if (!name || !phone) return;
+async function addMemberToColab(name, phone, note, role, imageFile) {
+  if (!name || !phone || !role) return;
+
   try {
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('phone', phone);
+    formData.append('role', role);
+    if (note) formData.append('note', note);
+    if (imageFile) formData.append('image', imageFile);
+
     const res = await fetch('/api/add-member', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ name, phone })
+      body: formData
     });
-    if (!res.ok) throw new Error('Failed to add member to Colab');
+
+    if (!res.ok) {
+      // Nếu Laravel trả lỗi validation 422
+      const errorData = await res.json();
+      throw errorData;
+    }
+
     const data = await res.json();
     return data;
   } catch (error) {
@@ -363,6 +374,7 @@ async function addMemberToColab(name, phone) {
     throw error;
   }
 }
+
 
 const filteredTables = computed(() => {
   if (!selectedPackage.value) return tables.value;

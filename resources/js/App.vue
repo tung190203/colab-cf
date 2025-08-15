@@ -1,3 +1,14 @@
+<script setup>
+import { computed } from 'vue';
+import { useRoute } from 'vue-router';
+
+const route = useRoute();
+const showGreeting = computed(() => {
+  const hidePaths = ['/status', '/new-bookings', '/add-member'];
+  const hideNames = ['VietQRPage'];
+  return !hidePaths.includes(route.path) && !hideNames.includes(route.name);
+});
+</script>
 <template>
     <div class="booking-root container py-5">
       <div class="card booking-card mx-auto pt-0 pb-4 px-4 shadow">
@@ -10,7 +21,7 @@
             style="width: 160px; height: 160px; display: flex; margin: 0 auto;"
           />
           <div>
-            <p v-if="$route.path !== '/status' && $route.name !== 'VietQRPage'" class="text-muted fs-6 mb-0 text-center">Xin chào! Chọn gói làm việc của bạn</p>
+            <p v-if="showGreeting" class="text-muted fs-6 mb-0 text-center">Xin chào! Chọn gói làm việc của bạn</p>
           </div>
         </div>
   

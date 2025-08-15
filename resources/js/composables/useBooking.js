@@ -11,6 +11,7 @@ const START_TIME_KEY = 'booking_start_time';
 const END_TIME_KEY = 'booking_end_time';
 const packages = ref({});
 const tables = ref([]);
+const bookingList = ref([]);
 const start_time = ref(null);
 const end_time = ref(null);
 const name = ref(null);
@@ -175,12 +176,16 @@ function resetAll() {
   end_time.value = null;
   name.value = null;
   phone.value = null;
+  param.delete('id');
+  param.delete('table');
   // Xoá sessionStorage khi reset
   sessionStorage.removeItem(STORAGE_KEYS.selectedPackage);
   sessionStorage.removeItem(STORAGE_KEYS.selectedTable);
   sessionStorage.removeItem(STORAGE_KEYS.form);
   sessionStorage.removeItem(START_TIME_KEY);
   sessionStorage.removeItem(END_TIME_KEY);
+  sessionStorage.removeItem('customer_name');
+  sessionStorage.removeItem('customer_phone');
 
   fetchPackages();
   fetchTables();
@@ -208,23 +213,23 @@ function formatCategoryName(key) {
     case 'vip_room':
       return 'PHÒNG VIP';
     case 'indoor':
-      return 'Bàn trong nhà';
+      return 'BÀN TRONG NHÀ';
     case 'outdoor':
-      return 'Bàn ngoài trời';
+      return 'BÀN NGOÀI TRỜI';
     case 'private':
-      return 'Chỗ ngồi riêng tư';
+      return 'CHỖ NGỒI RIÊNG TƯ';
     case 'basic':
-      return 'Gói cơ bản';
+      return 'GÓI CƠ BẢN';
     case 'vip':
-      return 'Đặt phòng họp';
+      return 'ĐẶT PHÒNG HỌP';
     case 'services':
-      return 'Dịch vụ';
+      return 'DỊCH VỤ';
     case 'office_services':
-      return 'Dịch vụ văn phòng';
+      return 'DỊCH VỤ VĂN PHÒNG';
     case 'other_services':
-      return 'Dịch vụ khác';
+      return 'DICH VỤ KHÁC';
     default:
-      return 'Dịch vụ khác';
+      return 'DICH VỤ KHÁC';
   }
 }
 
@@ -243,10 +248,29 @@ async function fetchServices() {
   }
 }
 
+async function fetchUserByCard(cardParam) {
+  if( !cardParam) return;
+  try {
+    const res = await fetch('/api/detail-user-by-card',{
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ cardParam })
+    });
+    if (!res.ok) throw new Error('Không tìm thấy người dùng');
+    const data = await res.json();
+    name.value = data.user?.name ?? null;
+    phone.value = data.user?.phone ?? null;
+  } catch (error) {
+    throw new Error(error.message);
+  }
+}
+
 async function fetchUserByPhone(phoneParam) {
   if( !phoneParam) return;
   try {
-    const res = await fetch('/api/detail-user',{
+    const res = await fetch('/api/detail-user-by-phone',{
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -258,7 +282,7 @@ async function fetchUserByPhone(phoneParam) {
     name.value = data.user?.name ?? null;
     phone.value = data.user?.phone ?? null;
   } catch (error) {
-    throw new Error(`Error fetching user by phone: ${error.message}`);
+    throw new Error(error.message);
   }
 }
 
@@ -307,6 +331,37 @@ async function fetchTables() {
     tables.value = data;
   } catch (error) {
     console.error('Error loading tables:', error);
+  }
+}
+
+async function fetchListBooking() {
+  try {
+    const res = await fetch('/api/list-booking');
+    if (!res.ok) throw new Error('Failed to fetch booking list');
+    const data = await res.json();
+    bookingList.value = data.bookings;
+  } catch (error) {
+    console.error('Error loading booking list:', error);
+    return [];
+  }
+}
+
+async function addMemberToColab(name, phone) {
+  if (!name || !phone) return;
+  try {
+    const res = await fetch('/api/add-member', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ name, phone })
+    });
+    if (!res.ok) throw new Error('Failed to add member to Colab');
+    const data = await res.json();
+    return data;
+  } catch (error) {
+    console.error('Error adding member to Colab:', error);
+    throw error;
   }
 }
 
@@ -373,6 +428,10 @@ export function useBooking() {
     end_time,
     name,
     phone,
-    fetchUserByPhone
+    fetchUserByCard,
+    fetchListBooking,
+    bookingList,
+    fetchUserByPhone,
+    addMemberToColab
   };
 }

@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\NewBookingCreated;
 use App\Models\Booking;
 use App\Models\Table;
 use App\Models\Package;
 use App\Models\Extra;
 use App\Models\User;
+use App\Models\VipCard;
 use App\Services\MomoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -86,13 +88,6 @@ class BookingController extends Controller
         // Tạo booking
         DB::beginTransaction();
         try {
-            $findUser = User::where('phone', $validated['customer_phone'])->first();
-
-            $user = $findUser ?? User::create([
-                'name' => $validated['customer_name'],
-                'phone' => $validated['customer_phone'],
-            ]);
-            
             $booking = Booking::create([
                 'package_id'     => $validated['package_id'],
                 'table_id'       => $tableId,
@@ -101,7 +96,8 @@ class BookingController extends Controller
                 'total_price'    => $total,
                 'payment_method' => $validated['payment_method'],
                 'status'         => $status,
-                'user_id'        => $user->id,
+                'full_name'     => $validated['customer_name'],
+                'phone'         => $validated['customer_phone'],
             ]);
 
             if (!empty($serviceQuantities)) {
@@ -118,6 +114,8 @@ class BookingController extends Controller
                         $table->save();
                     }
                 }
+                $booking->load('package', 'table', 'extras');
+                broadcast(new NewBookingCreated($booking))->toOthers();
             }
 
             DB::commit();
@@ -174,6 +172,8 @@ class BookingController extends Controller
                     $table->save();
                 }
             }
+            $booking->load('package', 'table', 'extras');
+            broadcast(new NewBookingCreated($booking))->toOthers();
         } else {
             $booking->status = 'cancelled';
         }
@@ -185,9 +185,9 @@ class BookingController extends Controller
 
     public function extras()
     {
-        $categories = ['services', 'office_services', 'other_services'];
+        $categories = ['services'];
         $extras = Extra::select('id', 'category', 'name', 'price')
-            ->whereIn('category', $categories)
+            ->whereNotIn('category', $categories)
             ->get()
             ->groupBy('category')
             ->map(function ($items) {
@@ -274,6 +274,8 @@ class BookingController extends Controller
                 $table->save();
             }
         }
+        $booking->load('package', 'table', 'extras');
+        broadcast(new NewBookingCreated($booking))->toOthers();
 
         return response()->json([
             'message' => 'Ảnh xác nhận đã được lưu',
@@ -281,18 +283,74 @@ class BookingController extends Controller
         ]);
     }
 
-    public function detailUser(Request $request)
+    public function findUserByCard(Request $request)
+    {
+        $request->validate([
+            'cardParam' => 'required|string|max:15',
+        ]);
+
+        // $user = User::where('phone', $request->phoneParam)->first();
+        $card = VipCard::where('card_number', $request->cardParam)->first();
+        if(!$card) {
+            return response()->json(['message' => 'Không tìm thấy thẻ VIP'], 404);
+        }
+        $user = User::find($card->user_id);
+
+        return response()->json(['user' => $user, 'card' => $card]);
+    }
+
+    public function findUserByPhone(Request $request)
     {
         $request->validate([
             'phoneParam' => 'required|string|max:15',
         ]);
 
         $user = User::where('phone', $request->phoneParam)->first();
-
         if (!$user) {
-            return response()->json(['message' => 'Người dùng không tồn tại'], 404);
+            return response()->json(['message' => 'Không tìm thấy người dùng'], 404);
         }
 
         return response()->json(['user' => $user]);
+    }
+
+    public function getListBookings(Request $request)
+    {
+        $request->validate([
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
+        ]);
+    
+        $query = Booking::with('package', 'table', 'extras')
+            ->where('status', 'confirmed')
+            ->orderBy('start_time', 'desc');
+    
+        if ($request->has('start_date')) {
+            $query->whereDate('start_time', '>=', Carbon::parse($request->start_date));
+        }
+    
+        if ($request->has('end_date')) {
+            $query->whereDate('end_time', '<=', Carbon::parse($request->end_date));
+        }
+    
+        $bookings = $query->get();
+    
+        return response()->json(['bookings' => $bookings]);
+    }
+
+    public function addMember(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'phone' => 'required|string|max:15',
+        ]);
+        $user = User::create([
+            'name' => $request->name,
+            'phone' => $request->phone,
+        ]);
+
+        return response()->json([
+            'message' => 'Thêm thành viên thành công',
+            'user' => $user,
+        ]);
     }
 }

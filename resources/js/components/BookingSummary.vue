@@ -14,7 +14,7 @@ const {
   start_time,
   end_time,
   name,
-  phone
+  phone,
 } = useBooking();
 
 function toVietnamDatetime(localDateTimeStr) {
@@ -103,20 +103,19 @@ function goBack() {
         <div>{{ selectedTable ?? '-' }}</div>
       </div>
       <div class="d-flex justify-content-between mb-2">
-        <div>Thời gian</div>
-        <div>
-          <template v-if="start_time && end_time">
-            {{ formatTimeRange(start_time, end_time).timeRange }}
-          </template>
-          <template v-else>-</template>
-        </div>
-      </div>
-
-      <div class="d-flex justify-content-between mb-2">
         <div>Ngày</div>
         <div>
           <template v-if="start_time && end_time">
             {{ formatTimeRange(start_time, end_time).day }}
+          </template>
+          <template v-else>-</template>
+        </div>
+      </div>
+      <div class="d-flex justify-content-between mb-2">
+        <div>Thời gian</div>
+        <div>
+          <template v-if="start_time && end_time">
+            {{ formatTimeRange(start_time, end_time).timeRange }}
           </template>
           <template v-else>-</template>
         </div>

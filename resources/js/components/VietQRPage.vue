@@ -138,13 +138,13 @@ onMounted(fetchQRCode);
       </template>
     </div>
 
-    <button
-      class="btn-submit"
-      :disabled="uploading"
-      @click="submitProof"
-    >
-      {{ uploading ? 'Đang upload...' : 'Gửi ảnh giao dịch thanh toán' }}
-    </button>
+    <!-- Hai nút ngang -->
+    <div class="btn-row">
+      <button class="btn-back" @click="router.back()">Quay lại</button>
+      <button class="btn-submit" :disabled="uploading" @click="submitProof">
+        {{ uploading ? 'Đang upload...' : 'Gửi bằng chứng' }}
+      </button>
+    </div>
   </div>
 </template>
 
@@ -186,7 +186,7 @@ onMounted(fetchQRCode);
 }
 
 .upload-area {
-  border: 2px dashed #007bff;
+  border: 2px dashed #20451F;
   border-radius: 12px;
   padding: 1.5rem;
   cursor: pointer;
@@ -196,7 +196,7 @@ onMounted(fetchQRCode);
 
 .upload-area.drag-over {
   background-color: #e6f0ff;
-  border-color: #0056b3;
+  border-color: #1a3b15;
 }
 
 .upload-area p {
@@ -217,28 +217,47 @@ onMounted(fetchQRCode);
   box-shadow: 0 2px 6px rgba(0,0,0,0.1);
 }
 
+/* Container cho 2 nút ngang */
+.btn-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 2rem;
+}
+
+.btn-back,
 .btn-submit {
-  margin-top: 1rem;
-  width: 100%;
-  max-width: 300px;
+  flex: 1;
   padding: 0.75rem 1rem;
   font-size: 1.1rem;
   font-weight: 600;
-  color: white;
-  background-color: #007bff;
-  border: none;
   border-radius: 8px;
   cursor: pointer;
   transition: background-color 0.25s ease;
 }
 
+.btn-back {
+  color: #20451F;
+  background-color: #f0f0f0;
+  border: 1px solid #ccc;
+}
+
+.btn-back:hover {
+  background-color: #e0e0e0;
+}
+
+.btn-submit {
+  color: white;
+  background-color: #20451F;
+  border: none;
+}
+
 .btn-submit:disabled {
-  background-color: #a3cdfd;
+  background-color: #ccc;
   cursor: not-allowed;
 }
 
 .btn-submit:hover:not(:disabled) {
-  background-color: #0056b3;
+  background-color: #1a3b15;
 }
 
 /* Responsive cho mobile */
@@ -252,6 +271,7 @@ onMounted(fetchQRCode);
     font-size: 1.3rem;
   }
 
+  .btn-back,
   .btn-submit {
     font-size: 1rem;
     padding: 0.65rem;

@@ -1,15 +1,15 @@
 <script setup>
-import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBooking } from '../composables/useBooking';
 import { toast } from 'vue3-toastify';
+import { onMounted } from 'vue';
 
 const router = useRouter();
-const { name, phone } = useBooking();
+const { name, phone, fetchTables, selectTableFromUrl, fetchUserByCard, param, fetchUserByPhone } = useBooking();
 
 function goNext() {
-  if (!name.value.trim() || !phone.value.trim()) {
-    toast.error('Vui lòng nhập đầy đủ tên và số điện thoại');
+  if (!phone.value?.trim()) {
+    toast.error('Vui lòng nhập số điện thoại');
     return;
   }
 
@@ -18,27 +18,39 @@ function goNext() {
     toast.error('Số điện thoại không hợp lệ');
     return;
   }
-  sessionStorage.setItem('customer_name', name.value);
-  sessionStorage.setItem('customer_phone', phone.value);
 
-  router.push('/summary');
+  fetchUserByPhone(phone.value)
+    .then(() => {
+      if (name.value && phone.value) {
+        toast.success('Đăng nhập thành công');
+        setTimeout(() => {
+          router.push('/package');
+        }, 1000);
+      }
+    })
+    .catch(err => {
+      toast.error(err.message);
+    });
 }
 
 function goBack() {
   router.back();
 }
+
+onMounted(async () => {
+  await fetchTables();
+  selectTableFromUrl();
+  await fetchUserByCard(param.get('id'));
+  if(name.value && phone.value) {
+    router.push('/package');
+  }
+});
 </script>
 
 <template>
   <div class="card p-4 border-0">
     <h4 class="mb-3">Thông tin khách hàng</h4>
-
-    <div class="mb-3">
-      <label class="form-label">Họ và tên</label>
-      <input v-model="name" type="text" class="form-control" placeholder="Nhập họ và tên"/>
-    </div>
-
-    <div class="mb-3">
+    <div class="mb-5">
       <label class="form-label">Số điện thoại</label>
       <input v-model="phone" type="text" class="form-control" placeholder="Nhập số điện thoại"/>
     </div>

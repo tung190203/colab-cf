@@ -9,15 +9,12 @@ const {
   selectedPackage,
   selectPackage,
   fetchPackages,
-  fetchTables,
   formatVND,
-  selectTableFromUrl,
   selectedTable,
   formatCategoryName,
   param,
   start_time,
   end_time,
-  fetchUserByPhone
 } = useBooking();
 
 function formatVietnamDatetime(date) {
@@ -41,10 +38,7 @@ function setDefaultTimes() {
 
 
 onMounted(async () => {
-  await fetchTables();
   await fetchPackages();
-  selectTableFromUrl();
-  fetchUserByPhone(param.get('phone'));
 });
 
 function goNext() {
@@ -54,10 +48,8 @@ function goNext() {
   if (tableParam) {
     selectedTable.value = tableParam;
     setDefaultTimes();
-    router.push('/extras');
-  } else {
-    router.push('/table');
   }
+  router.push('/table');
 }
 </script>
 

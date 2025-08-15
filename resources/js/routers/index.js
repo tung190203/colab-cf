@@ -29,7 +29,7 @@ const router = createRouter({
 });
 
 router.beforeEach((to, from, next) => {
-  if (to.path !== '/' && to.path !== '/new-bookings' && to.path !== '/add-member') {
+  if (to.path !== '/' && to.path !== '/new-bookings' && to.path !== '/add-member' && to.path !== '/list-member') {
     const name = sessionStorage.getItem('customer_name');
     const phone = sessionStorage.getItem('customer_phone');
 

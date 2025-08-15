@@ -14,3 +14,8 @@ Route::post('/detail-user-by-card', [BookingController::class, 'findUserByCard']
 Route::post('/detail-user-by-phone', [BookingController::class, 'findUserByPhone']);
 Route::get('/list-booking', [BookingController::class, 'getListBookings']);
 Route::post('/add-member', [BookingController::class, 'addMember']);
+Route::post('/check-table', [BookingController::class, 'checkTableAvailability']);
+Route::post('/booking/mark-as-served', [BookingController::class, 'markAsServed']);
+Route::get('/list-members', [BookingController::class, 'getListMembers']);
+Route::delete('/member/{member}', [BookingController::class, 'deleteMember']);
+Route::put('/member/{member}', [BookingController::class, 'editMember']);

@@ -49,6 +49,28 @@ function formatBookingTime(start, end) {
   return `${startTimeStr} - ${endTimeStr} - ${dateStr}`;
 }
 
+function formatServedStatus(isServed) {
+  return isServed === 0 ? 'Chưa phục vụ' : 'Đã phục vụ';
+}
+
+function markAsServed(bookingId) {
+  fetch(`/api/booking/mark-as-served`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ booking_id: bookingId }),
+  });
+  toast.success('Đánh dấu đã phục vụ thành công!');
+  bookingList.value = bookingList.value.filter(booking => booking.id !== bookingId);
+  if (modalInstance) {
+    modalInstance.hide();
+  }
+  if ((currentPage.value - 1) * itemsPerPage >= bookingList.value.length && currentPage.value > 1) {
+    currentPage.value--;
+  }
+}
+
 onMounted(async () => {
   await fetchListBooking();
 
@@ -75,17 +97,18 @@ onMounted(async () => {
     <h2 class="mb-4">Danh sách Booking</h2>
 
     <div class="row g-3">
+        <div v-if="bookingList.length === 0" class="text-center text-muted py-5">
+      Không có booking nào hiện tại.
+    </div>
       <div v-for="(booking, index) in paginatedBookingList" :key="booking.id" class="col-md-4">
         <div class="card h-100 shadow-sm cursor-pointer" @click="openModal(booking)">
           <div class="card-body">
             <div class="d-flex justify-content-between align-items-center mb-2">
               <span class="fw-bold">#{{ (currentPage - 1) * itemsPerPage + index + 1 }}</span>
               <span :class="{
-                'bg-success text-white': booking.status === 'confirmed',
-                'bg-warning text-dark': booking.status === 'pending',
-                'bg-danger text-white': booking.status === 'cancelled'
+                'bg-warning text-dark': booking.is_served === 0,
               }" class="badge">
-                {{ booking.status }}
+                {{ formatServedStatus(booking.is_served) }}
               </span>
             </div>
             <h5 class="card-title text-base">{{ booking.full_name }}</h5>
@@ -186,6 +209,8 @@ onMounted(async () => {
 
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            <button type="button" class="btn btn-success"
+              @click="markAsServed(selectedBooking.id)">Đánh dấu là đã phục vụ</button>
           </div>
         </div>
       </div>

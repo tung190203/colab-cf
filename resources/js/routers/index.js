@@ -8,6 +8,7 @@ import VietQRPage from '../components/VietQRPage.vue';
 import Auth from '../components/Auth.vue';
 import NewBookings from '../components/NewBookings.vue';
 import AddMember from '../components/AddMember.vue';
+import ListMember from '../components/ListMember.vue';
 
 const routes = [
   { path: '/', component: Auth, name: 'Auth' },
@@ -19,6 +20,7 @@ const routes = [
   { path: '/transfer/:bookingId', component: VietQRPage, name: 'VietQRPage' },
   { path: '/new-bookings', component: NewBookings, name: 'NewBookings' },
   { path: '/add-member', component: AddMember, name: 'AddMember' },
+  { path: '/list-member', component: ListMember, name: 'ListMember' },
 ];
 
 const router = createRouter({

@@ -118,7 +118,6 @@ function selectPackage(p) {
 }
 
 function selectTable(t) {
-  if (t.status === 'occupied') return;
   selectedTable.value = t.code;
 }
 

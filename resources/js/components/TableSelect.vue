@@ -1,7 +1,9 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import axios from 'axios'; // Thêm axios
 import { useBooking } from '../composables/useBooking';
+import { toast } from 'vue3-toastify';
 
 const router = useRouter();
 const {
@@ -15,19 +17,17 @@ const {
   end_time
 } = useBooking();
 
-// Popup chọn giờ
 const showTimePopup = ref(false);
 const localStartTime = ref('');
 const localEndTime = ref('');
 const minStartTime = ref('');
+const tempSelectedTable = ref(null);
 
-// Format datetime-local
 const formatDateTimeLocal = (date) => {
   const pad = (n) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
 
-// Load tables + restore session
 onMounted(async () => {
   await fetchTables();
   const savedStart = sessionStorage.getItem('start_time');
@@ -39,7 +39,6 @@ onMounted(async () => {
   if (savedTable) selectedTable.value = savedTable;
 });
 
-// Watch localStartTime để tính localEndTime
 watch(localStartTime, (val) => {
   if (!val) return;
   const duration = selectedPackage.value?.duration || 60;
@@ -48,7 +47,7 @@ watch(localStartTime, (val) => {
 });
 
 function openTimePopup(table) {
-  selectTable(table);
+  tempSelectedTable.value = table;
   const now = new Date();
   minStartTime.value = formatDateTimeLocal(now);
 
@@ -59,22 +58,30 @@ function openTimePopup(table) {
   showTimePopup.value = true;
 }
 
-function applyTimeSelection() {
-  start_time.value = localStartTime.value;
-  end_time.value = localEndTime.value;
-  showTimePopup.value = false;
+async function applyTimeSelection() {
+  try {
+    const res = await axios.post('/api/check-table', {
+      table_id: tempSelectedTable.value.id,
+      start_time: localStartTime.value,
+      end_time: localEndTime.value
+    });
+
+    if (res.data.success) {
+      selectTable(tempSelectedTable.value);
+      start_time.value = localStartTime.value;
+      end_time.value = localEndTime.value;
+      showTimePopup.value = false;
+      toast.success(res.data.message || 'Bàn đã được chọn thành công.');
+    } else {
+      toast.error(res.data.message || 'Bàn đã được đặt.');
+    }
+  } catch (err) {
+    toast.error(err.response?.data?.message || 'Lỗi khi kiểm tra bàn.');
+  }
 }
 
 function goNext() {
   if (!selectedTable.value) return;
-
-  if (!start_time.value || !end_time.value) {
-    const now = new Date();
-    const duration = selectedPackage.value?.duration || 60;
-    start_time.value = formatDateTimeLocal(now);
-    end_time.value = formatDateTimeLocal(new Date(now.getTime() + duration * 60000));
-  }
-
   router.push('/extras');
 }
 
@@ -91,38 +98,17 @@ function goBack() {
       <div class="row row-cols-2 row-cols-md-4 g-3">
         <div v-for="t in groupTables" :key="t.code" class="col">
           <div
-            @click="t.status !== 'occupied' && openTimePopup(t)"
-            :class="[
-              'table-card p-3 text-center rounded shadow-sm',
-              {
-                'table-free': t.status === 'free',
-                'table-occupied': t.status === 'occupied',
-                'table-selected': selectedTable === t.code,
-                'cursor-pointer': t.status !== 'occupied',
-              },
-            ]"
+            @click="openTimePopup(t)"
+            class="table-card p-3 text-center rounded shadow-sm cursor-pointer"
+            :class="{ 'table-selected': selectedTable === t.code }"
           >
             <div class="fw-bold fs-5">{{ t.code }}</div>
             <div class="mt-1">
-              <small v-if="t.status === 'occupied'" class="text-danger fw-semibold">Đã đặt</small>
-              <small v-else-if="selectedTable === t.code" class="text-success fw-semibold">Đang chọn</small>
-              <small v-else class="text-muted">Trống</small>
+              <small v-if="selectedTable === t.code" class="text-success fw-semibold">Đang chọn</small>
+              <small v-else class="text-muted">Chưa chọn</small>
             </div>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Legend -->
-    <div class="d-flex justify-content-center gap-5 mt-3 flex-wrap" style="font-size: 0.875rem">
-      <div class="d-flex aligns-item-center gap-2">
-        <span class="legend-box free"></span> Trống
-      </div>
-      <div class="d-flex aligns-item-center gap-2">
-        <span class="legend-box selected"></span> Đang chọn
-      </div>
-      <div class="d-flex aligns-item-center gap-2">
-        <span class="legend-box occupied"></span> Đã đặt
       </div>
     </div>
 
@@ -134,24 +120,16 @@ function goBack() {
 
     <!-- Popup chọn giờ -->
     <div v-if="showTimePopup" class="popup-backdrop">
-      <div class="popup-content p-4 rounded shadow bg-white" style="max-width: 400px; margin: auto;">
+      <div class="popup-content p-4 rounded shadow bg-white">
         <h5 class="mb-3">Chọn thời gian</h5>
-
         <div class="mb-3">
           <label class="form-label">Bắt đầu</label>
-          <input
-            type="datetime-local"
-            v-model="localStartTime"
-            class="form-control"
-            :min="minStartTime"
-          />
+          <input type="datetime-local" v-model="localStartTime" class="form-control" :min="minStartTime" />
         </div>
-
         <div class="mb-3">
           <label class="form-label">Kết thúc</label>
           <input type="datetime-local" v-model="localEndTime" class="form-control" disabled />
         </div>
-
         <div class="d-flex justify-content-end gap-2">
           <button class="btn btn-outline-secondary" @click="showTimePopup = false">Hủy</button>
           <button class="btn btn-primary" @click="applyTimeSelection">Xác nhận</button>

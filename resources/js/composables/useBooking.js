@@ -121,14 +121,53 @@ function selectTable(t) {
   selectedTable.value = t.code;
 }
 
+const excludeFreeCategories = ['desserts', 'services', 'office_services', 'other_services'];
+
+function recalculateFree() {
+  const freeOrigin = Number(sessionStorage.getItem('freeDrinks')) || 0;
+  let freeLeft = freeOrigin;
+
+  const allSelected = Object.entries(form).flatMap(([cate, list]) =>
+    list.map((e) => ({ ...e, cate }))
+  ).sort((a, b) => (a.selectedAt || 0) - (b.selectedAt || 0));
+
+  for (const it of allSelected) {
+    const list = form[it.cate];
+    const idx = list.findIndex((x) => x.id === it.id);
+    if (idx === -1) continue;
+
+    // Nếu thuộc nhóm exclude thì bỏ qua free
+    if (excludeFreeCategories.includes(it.cate)) {
+      list[idx].freeApplied = 0;
+      list[idx].totalPrice = it.quantity * it.price;
+      continue;
+    }
+
+    // Nếu là category được áp free
+    const freeForThis = Math.min(it.quantity, freeLeft);
+    const payableQty = it.quantity - freeForThis;
+
+    list[idx].freeApplied = freeForThis;
+    list[idx].totalPrice = payableQty * it.price;
+    if (!list[idx].selectedAt) list[idx].selectedAt = Date.now() + Math.random();
+
+    freeLeft -= freeForThis;
+  }
+}
+
 function toggleExtra(extra, category) {
   const list = form[category];
   const idx = list.findIndex((e) => e.id === extra.id);
   if (idx === -1) {
-    list.push({ ...extra, quantity: 1 });
+    list.push({
+      ...extra,
+      quantity: 1,
+      selectedAt: Date.now() + Math.random(),
+    });
   } else {
     list.splice(idx, 1);
   }
+  recalculateFree();
 }
 
 function updateQuantity(category, id, value) {
@@ -137,6 +176,7 @@ function updateQuantity(category, id, value) {
   if (item) {
     item.quantity = Math.max(1, Number(value) || 1);
   }
+  recalculateFree();
 }
 
 const extras = computed(() => {
@@ -151,8 +191,13 @@ const extras = computed(() => {
 
 const total = computed(() => {
   let s = 0;
-  if (selectedPackage.value) s += selectedPackage.value.price;
-  extras.value.forEach((e) => (s += e.price * (e.quantity || 1)));
+  if (selectedPackage.value) {
+    s += selectedPackage.value.price;
+  }
+  extras.value.forEach((e) => {
+    s += e.totalPrice ?? e.price * (e.quantity || 1);
+  });
+
   return s;
 });
 
@@ -185,6 +230,7 @@ function resetAll() {
   sessionStorage.removeItem(END_TIME_KEY);
   sessionStorage.removeItem('customer_name');
   sessionStorage.removeItem('customer_phone');
+  sessionStorage.removeItem('freeDrinks');
 
   fetchPackages();
   fetchTables();

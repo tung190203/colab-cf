@@ -32,6 +32,7 @@ async function pay(method) {
       extras: extras.value.map((e) => ({
         id: e.id,
         quantity: e.quantity || 1,
+        free_applied: e.freeApplied || 0,
       })),
       payment_method: method,
       customer_name: name.value,
@@ -133,9 +134,20 @@ function goBack() {
         <div>{{ formatVND(selectedPackage?.price) ?? '-' }}</div>
       </div>
       <div v-if="extras.length" class="mb-2">
-        <div v-for="(e, i) in extras" :key="i" class="d-flex justify-content-between border-top pt-2 mt-2">
+        <div
+          v-for="(e, i) in extras"
+          :key="i"
+          class="d-flex justify-content-between border-top pt-2 mt-2"
+        >
           <div>{{ e.name }} x{{ e.quantity }}</div>
-          <div>{{ formatVND(e.price * e.quantity) }}</div>
+
+          <!-- nếu totalPrice > 0 thì tính tiền, nếu totalPrice == 0 thì free -->
+          <div v-if="e.totalPrice > 0">
+            {{ formatVND(e.totalPrice) }}
+          </div>
+          <div v-else class="text-success">
+            {{ formatVND(0) }}
+          </div>
         </div>
       </div>
       <div class="d-flex justify-content-between fw-bold fs-5 border-top pt-3 mt-3">

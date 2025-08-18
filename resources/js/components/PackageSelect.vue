@@ -36,6 +36,32 @@ function setDefaultTimes() {
   end_time.value = formatVietnamDatetime(end);
 }
 
+function selectPackageWithBonus(pkg) {
+  selectPackage(pkg);
+
+  let freeDrinks = 0;
+
+  if (pkg.name.includes('1 giờ') && pkg.category === 'basic') {
+    freeDrinks = 1;
+  } else if (pkg.name.includes('2 giờ') && pkg.category === 'basic') {
+    freeDrinks = 1;
+  } else if (pkg.name.includes('Nửa ngày') && pkg.category === 'basic') {
+    freeDrinks = 1;
+  } else if (pkg.name.includes('Cả ngày') && pkg.category === 'basic') {
+    freeDrinks = 1;
+  } else if (pkg.name.includes('1 giờ') && pkg.category === 'vip') {
+    freeDrinks = 3;
+  } else if (pkg.name.includes('2 giờ') && pkg.category === 'vip') {
+    freeDrinks = 5;
+  } else if (pkg.name.includes('Nửa ngày') && pkg.category === 'vip') {
+    freeDrinks = 7;
+  } else if (pkg.name.includes('Cả ngày') && pkg.category === 'vip') {
+    freeDrinks = 9;
+  }
+
+  // Lưu vào sessionStorage
+  sessionStorage.setItem('freeDrinks', freeDrinks);
+}
 
 onMounted(async () => {
   await fetchPackages();
@@ -64,7 +90,7 @@ function goNext() {
           :key="pkg.id"
           class="col-12 p-3 package-card cursor-pointer"
           :class="{ 'package-card-selected': selectedPackage && selectedPackage.id === pkg.id }"
-          @click="selectPackage(pkg)"
+          @click="selectPackageWithBonus(pkg)"
         >
           <div class="d-flex justify-content-between align-items-center">
             <div>

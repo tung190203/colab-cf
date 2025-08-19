@@ -65,7 +65,7 @@ function goBack() {
 
 <template>
   <div>
-    <div class="fs-6 mb-4 text-danger">Dịch vụ thêm, không bao gồm gói đã chọn.</div>
+    <div class="fs-6 mb-4 text-danger">(Hãy chọn đồ uống miễn phí của bạn)</div>
     <div v-for="(items, category) in services" :key="category" class="mb-4">
       <h5
         class="mb-3 fw-semibold cursor-pointer d-flex justify-content-between align-items-center"

@@ -240,19 +240,19 @@ function resetAll() {
 function formatCategoryName(key) {
   switch (key) {
     case 'coffee':
-      return 'FINE ROBUSTA';
+      return 'CÀ PHÊ';
     case 'juice_tea':
-      return 'JUICE TEA';
+      return 'TRÀ HOA QUẢ';
     case 'coffee_machine_arabica':
-      return 'ARABICA';
+      return 'CÀ PHÊ MÁY ARABICA';
     case 'coffee_machine_special':
-      return 'SPECIAL';
+      return 'CÀ PHÊ MÁY ĐẶC BIỆT';
     case 'juice':
-      return 'JUICE';
+      return 'NƯỚC ÉP';
     case 'matcha':
       return 'MATCHA';
     case 'desserts':
-      return 'DESSERTS';
+      return 'MÓN TRÁNG MIỆNG';
     case 'meeting_room':
       return 'PHÒNG HỌP';
     case 'vip_room':

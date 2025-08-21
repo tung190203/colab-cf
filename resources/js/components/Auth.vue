@@ -49,14 +49,13 @@ onMounted(async () => {
 
 <template>
   <div class="card p-4 border-0">
-    <h4 class="mb-3">Thông tin khách hàng</h4>
+    <h3 class="mb-3">Đăng nhập</h3>
     <div class="mb-5">
       <label class="form-label">Số điện thoại</label>
       <input v-model="phone" type="text" class="form-control" placeholder="Nhập số điện thoại"/>
     </div>
 
     <div class="d-flex justify-content-between gap-3">
-      <button class="btn btn-outline-secondary flex-grow-1" @click="goBack">Quay lại</button>
       <button class="btn btn-warning flex-grow-1" @click="goNext">Tiếp tục</button>
     </div>
   </div>

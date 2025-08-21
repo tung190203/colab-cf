@@ -4,7 +4,7 @@ import Echo from '../echo.js';
 import { useBooking } from '../composables/useBooking';
 import { toast } from 'vue3-toastify';
 
-const { fetchListBooking, bookingList } = useBooking();
+const { fetchListBooking, bookingList, formatCategoryName } = useBooking();
 const selectedBooking = ref(null);
 const notificationSound = ref(null);
 let modalInstance = null;
@@ -90,6 +90,21 @@ onMounted(async () => {
       }
     });
 });
+
+function formatPaymentMethod(method) {
+  switch (method) {
+    case 'cash':
+      return 'Tiền mặt';
+    case 'transfer':
+      return 'Chuyển khoản';
+    case 'card':
+      return 'Thẻ tín dụng';
+    case 'momo':
+      return 'Momo';
+    default:
+      return 'Không xác định';
+  }
+}
 </script>
 
 <template>
@@ -174,11 +189,17 @@ onMounted(async () => {
               </div>
 
               <!-- Thời gian -->
-              <div class="col-md-12">
+              <div class="col-md-6">
                 <div class="card shadow-sm p-2">
                   <h6 class="fw-bold mb-1">Thời gian</h6>
                   <p class="mb-0">{{ selectedBooking ? formatBookingTime(selectedBooking.start_time,
                     selectedBooking.end_time) : '' }}</p>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="card shadow-sm p-2">
+                  <h6 class="fw-bold mb-1">Phương thức thanh toán</h6>
+                  <p class="mb-0">{{ formatPaymentMethod(selectedBooking?.payment_method) || 'N/A' }}</p>
                 </div>
               </div>
 
@@ -191,7 +212,7 @@ onMounted(async () => {
                       <li v-for="extra in selectedBooking.extras" :key="extra.id"
                         class="list-group-item d-flex justify-content-between align-items-center">
                         <div>
-                          <strong>{{ extra.name }}</strong> ({{ extra.category }})
+                          <strong>{{ extra.name }}</strong> ({{ formatCategoryName(extra.category).charAt(0).toUpperCase() + formatCategoryName(extra.category).slice(1).toLowerCase() }})
                         </div>
                         <div>
                           x{{ extra.pivot.quantity }}
@@ -201,6 +222,15 @@ onMounted(async () => {
                   </div>
                   <div v-else class="text-muted">
                     Không có dịch vụ thêm.
+                  </div>
+                </div>
+              </div>
+              <div  v-if="selectedBooking?.proof_image" class="col-md-12">
+                <div class="card shadow-sm p-2">
+                  <h6 class="fw-bold mb-1">Hình ảnh thanh toán</h6>
+                  <div class="text-center">
+                    <img :src="selectedBooking.proof_image" alt="Payment Image" class="img-fluid rounded"
+                      style="max-height: 300px; object-fit: cover;">
                   </div>
                 </div>
               </div>

@@ -114,7 +114,7 @@ function goBack() {
 
     <!-- Nút điều hướng -->
     <div class="d-flex justify-content-between mt-4 gap-3">
-      <button class="btn btn-outline-secondary flex-grow-1" @click="goBack">Quay lại</button>
+      <!-- <button class="btn btn-outline-secondary flex-grow-1" @click="goBack">Quay lại</button> -->
       <button class="btn btn-warning flex-grow-1" :disabled="!selectedTable" @click="goNext">Tiếp tục</button>
     </div>
 

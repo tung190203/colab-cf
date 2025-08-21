@@ -24,4 +24,9 @@ class Booking extends Model
     {
         return $this->belongsToMany(Extra::class, 'booking_extras')->withPivot('quantity');
     }
+
+    public function getProofImageAttribute($value)
+    {
+        return $value ? 'storage/' . $value : null;
+    }
 }

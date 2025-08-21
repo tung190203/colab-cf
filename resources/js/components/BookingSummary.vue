@@ -90,6 +90,10 @@ function formatTimeRange(start, end) {
 function goBack() {
   router.back();
 }
+
+function callHotline() {
+  window.location.href = 'tel:0988992268';
+}
 </script>
 
 <template>
@@ -162,8 +166,22 @@ function goBack() {
       <button class="btn btn-primary btn-custom" @click="pay('cash')">Thanh toán tiền mặt</button>
     </div>
 
-    <div class="d-flex justify-content-between gap-3 mt-4">
-      <button class="btn btn-outline-secondary flex-grow-1" @click="goBack">Quay lại</button>
+    <div class="d-flex flex-column justify-content-between gap-3 mt-3">
+      <!-- <button class="btn btn-outline-secondary flex-grow-1" @click="goBack">Quay lại</button> -->
+      <button class="btn btn-warning flex-grow-1" @click="callHotline">
+        <i class="bi bi-telephone-fill"></i> Hỗ trợ
+        <span class="ms-1">0988992268</span>
+
+</button>
+
     </div>
   </div>
 </template>
+
+<style scoped>
+.btn-warning {
+  background-color: #ff9800 !important;
+  border-color: #ff9800 !important;
+  color: #fff;
+}
+</style>

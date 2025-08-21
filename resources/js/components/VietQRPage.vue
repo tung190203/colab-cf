@@ -140,7 +140,7 @@ onMounted(fetchQRCode);
 
     <!-- Hai nút ngang -->
     <div class="btn-row">
-      <button class="btn-back" @click="router.back()">Quay lại</button>
+      <!-- <button class="btn-back" @click="router.back()">Quay lại</button> -->
       <button class="btn-submit" :disabled="uploading" @click="submitProof">
         {{ uploading ? 'Đang upload...' : 'Gửi bằng chứng' }}
       </button>

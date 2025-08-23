@@ -37,6 +37,7 @@ async function pay(method) {
       payment_method: method,
       customer_name: name.value,
       customer_phone: phone.value,
+      mode_booking: selectedPackage.value.category === 'basic' ? 'seat' : 'room',
     };
 
     const res = await fetch('/api/booking', {

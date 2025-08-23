@@ -4,6 +4,7 @@ import { ref, reactive, computed, watch } from 'vue';
 const STORAGE_KEYS = {
   selectedPackage: 'booking_selectedPackage',
   selectedTable: 'booking_selectedTable',
+  selectedTableId: 'booking_selectedTableId',
   form: 'booking_form',
 };
 
@@ -64,6 +65,10 @@ const selectedTable = ref(
   JSON.parse(sessionStorage.getItem(STORAGE_KEYS.selectedTable)) || null
 );
 
+const selectedTableId = ref(
+  JSON.parse(sessionStorage.getItem(STORAGE_KEYS.selectedTableId)) || null
+);
+
 const form = reactive(
   JSON.parse(sessionStorage.getItem(STORAGE_KEYS.form)) || {}
 );
@@ -101,6 +106,14 @@ watch(
   { deep: true }
 );
 
+// Đồng bộ thay đổi selectedTableId vào sessionStorage
+watch(
+  selectedTableId,
+  (val) => {
+    sessionStorage.setItem(STORAGE_KEYS.selectedTableId, JSON.stringify(val));
+  }
+);
+
 // Đồng bộ thay đổi form (extras) vào sessionStorage
 watch(
   form,
@@ -119,6 +132,10 @@ function selectPackage(p) {
 
 function selectTable(t) {
   selectedTable.value = t.code;
+}
+
+function selectId(t) {
+  selectedTableId.value = t.id;
 }
 
 const excludeFreeCategories = ['desserts', 'services', 'office_services', 'other_services'];
@@ -211,6 +228,7 @@ const endTime = computed(() => {
 function resetAll() {
   selectedPackage.value = null;
   selectedTable.value = null;
+  selectedTableId.value = null;
   Object.keys(form).forEach((key) => {
     if (Array.isArray(form[key])) {
       form[key] = [];
@@ -225,6 +243,7 @@ function resetAll() {
   // Xoá sessionStorage khi reset
   sessionStorage.removeItem(STORAGE_KEYS.selectedPackage);
   sessionStorage.removeItem(STORAGE_KEYS.selectedTable);
+  sessionStorage.removeItem(STORAGE_KEYS.selectedTableId);
   sessionStorage.removeItem(STORAGE_KEYS.form);
   sessionStorage.removeItem(START_TIME_KEY);
   sessionStorage.removeItem(END_TIME_KEY);
@@ -429,7 +448,7 @@ const filteredTables = computed(() => {
 
   if (selectedPackage.value.category === 'basic') {
     Object.keys(copy).forEach(cat => {
-      if (['vip_room', 'meeting_room'].includes(cat)) {
+      if (['vip_room'].includes(cat)) {
         delete copy[cat];
       }
     });
@@ -450,8 +469,9 @@ function selectTableFromUrl() {
   const allTables = Object.values(tables.value).flat();
 
   const found = allTables.find((x) => x.code.toLowerCase() === tq.toLowerCase());
-  if (found && found.status !== 'occupied') {
+  if (found) {
     selectedTable.value = found.code;
+    selectedTableId.value = found.id;
   } else {
     console.warn(`Table ${tq} không tồn tại hoặc đã bị đặt.`);
   }
@@ -463,6 +483,7 @@ export function useBooking() {
     tables,
     selectedPackage,
     selectedTable,
+    selectedTableId,
     form,
     services,
     formatVND,

@@ -30,6 +30,7 @@ class BookingController extends Controller
             'payment_method' => 'required|in:momo,card,none,cash,transfer',
             'customer_name' => 'required|string|max:255',
             'customer_phone' => 'required|string|max:15',
+            'mode_booking' => 'required|in:seat,room',
         ]);
 
         $startTime = isset($validated['start_time'])
@@ -68,8 +69,8 @@ class BookingController extends Controller
             foreach ($validated['extras'] as $srv) {
                 $extra = Extra::find($srv['id']);
                 if ($extra) {
-                    $quantity = (int)$srv['quantity'];
-                    $freeApplied = isset($srv['free_applied']) ? (int)$srv['free_applied'] : 0;
+                    $quantity = (int) $srv['quantity'];
+                    $freeApplied = isset($srv['free_applied']) ? (int) $srv['free_applied'] : 0;
 
                     // Giá sau khi trừ free
                     $lineTotal = max(0, ($quantity - $freeApplied)) * $extra->price;
@@ -94,16 +95,17 @@ class BookingController extends Controller
         DB::beginTransaction();
         try {
             $booking = Booking::create([
-                'package_id'     => $validated['package_id'],
-                'table_id'       => $tableId,
-                'start_time'     => $startTime,
-                'end_time'       => Carbon::parse($validated['end_time'])->format('Y-m-d H:i:s'),
-                'total_price'    => $total,
+                'package_id' => $validated['package_id'],
+                'table_id' => $tableId,
+                'start_time' => $startTime,
+                'end_time' => Carbon::parse($validated['end_time'])->format('Y-m-d H:i:s'),
+                'total_price' => $total,
                 'payment_method' => $validated['payment_method'],
-                'status'         => $status,
-                'full_name'      => $validated['customer_name'],
-                'phone'          => $validated['customer_phone'],
-                'is_served'     => 0,
+                'status' => $status,
+                'full_name' => $validated['customer_name'],
+                'phone' => $validated['customer_phone'],
+                'is_served' => 0,
+                'mode_booking' => $validated['mode_booking'],
             ]);
 
             if (!empty($serviceQuantities)) {
@@ -217,57 +219,125 @@ class BookingController extends Controller
     }
 
     public function tables()
-    {
-        $tables = Table::select('id', 'code', 'category', 'status')
-            ->get()
-            ->groupBy('category')
-            ->map(function ($items) {
-                return $items->map(function ($item) {
-                    return [
-                        'id' => $item->id,
-                        'code' => $item->code,
-                    ];
-                })->values();
-            });
-        return response()->json($tables);
-    }
+{
+    $tables = Table::select('id', 'code', 'category', 'status', 'total_seating')
+        ->get()
+        ->groupBy('category')
+        ->map(function ($items) {
+            return $items->map(function ($item) {
+                $bookedSeats = Booking::where('table_id', $item->id)
+                    ->whereDate('start_time', today())
+                    ->where('mode_booking', 'seat')
+                    ->count();
+                return [
+                    'id' => $item->id,
+                    'code' => $item->code,
+                    'total_seating' => $item->total_seating,
+                    'booked_seats' => $bookedSeats,
+                ];
+            })->values();
+        });
+
+    return response()->json($tables);
+}
+
 
     public function checkTableAvailability(Request $request)
     {
-        $tableId   = $request->table_id;
+        $tableId = $request->table_id;
         $startTime = $request->start_time;
-        $endTime   = $request->end_time;
+        $endTime = $request->end_time;
+        $modeBooking = $request->mode_booking;
 
+        // Lấy thông tin của bàn từ table_id
         $table = Table::findOrFail($tableId);
-        $conflictMap = [
-            'C1' => ['C1', 'C2', 'C3'],
-            'C2' => ['C1', 'C2'],
-            'C3' => ['C1', 'C3'],
-        ];
 
-        if (array_key_exists($table->code, $conflictMap)) {
-            $tableIdsToCheck = Table::whereIn('code', $conflictMap[$table->code])->pluck('id');
-        } else {
-            $tableIdsToCheck = [$tableId];
+        if ($modeBooking == 'seat') {
+            $maxSeats = $table->total_seating;
+
+            if (in_array($table->code, ['C1', 'C2', 'C3'])) {
+                $idC1 = Table::where('code', 'C1')->value('id');
+                $hasRoomBooking = Booking::where('table_id', $idC1)
+                    ->where('mode_booking', 'room')
+                    ->where(function ($query) use ($startTime, $endTime) {
+                        $query->whereBetween('start_time', [$startTime, $endTime])
+                            ->orWhereBetween('end_time', [$startTime, $endTime])
+                            ->orWhere(function ($q) use ($startTime, $endTime) {
+                                $q->where('start_time', '<=', $startTime)
+                                    ->where('end_time', '>=', $endTime);
+                            });
+                    })
+                    ->exists();
+
+                if ($hasRoomBooking) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Phòng C1 đã được đặt trong thời gian bạn chọn. Vui lòng chọn lại.',
+                    ], 409);
+                }
+            }
+
+            // Kiểm tra số ghế đã được đặt
+            $bookedSeats = Booking::where('table_id', $tableId)
+                ->where('mode_booking', 'seat')
+                ->where(function ($query) use ($startTime, $endTime) {
+                    $query->whereBetween('start_time', [$startTime, $endTime])
+                        ->orWhereBetween('end_time', [$startTime, $endTime])
+                        ->orWhere(function ($q) use ($startTime, $endTime) {
+                            $q->where('start_time', '<=', $startTime)
+                                ->where('end_time', '>=', $endTime);
+                        });
+                })
+                ->count();
+
+            if ($bookedSeats >= $maxSeats) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Bàn không còn đủ chỗ ngồi. Vui lòng chọn lại.',
+                ], 409);
+            }
         }
 
-        $hasConflict = Booking::whereIn('table_id', $tableIdsToCheck)
-        ->where('is_served', 0)
-            ->where(function ($query) use ($startTime, $endTime) {
-                $query->whereBetween('start_time', [$startTime, $endTime])
-                    ->orWhereBetween('end_time', [$startTime, $endTime])
-                    ->orWhere(function ($q) use ($startTime, $endTime) {
-                        $q->where('start_time', '<=', $startTime)
-                            ->where('end_time', '>=', $endTime);
-                    });
-            })
-            ->exists();
+        // Kiểm tra chế độ "room"
+        if ($modeBooking == 'room') {
+            $hasConflict = Booking::where('table_id', $tableId)
+                ->where(function ($query) use ($startTime, $endTime) {
+                    $query->whereBetween('start_time', [$startTime, $endTime])
+                        ->orWhereBetween('end_time', [$startTime, $endTime])
+                        ->orWhere(function ($q) use ($startTime, $endTime) {
+                            $q->where('start_time', '<=', $startTime)
+                                ->where('end_time', '>=', $endTime);
+                        });
+                })
+                ->exists();
 
-        if ($hasConflict) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Bàn này hoặc bàn liên quan đã được đặt trong thời gian bạn chọn. Vui lòng chọn lại.'
-            ], 409);
+            if ($hasConflict) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Phòng này đã được đặt trong thời gian bạn chọn. Vui lòng chọn lại.',
+                ], 409);
+            }
+            if ($table->code == 'C1') {
+                $tableIds = Table::whereIn('code', ['C1', 'C2', 'C3'])->pluck('id')->toArray();
+                $hasSeatBooking = Booking::whereIn('table_id', $tableIds)
+                    ->where('mode_booking', 'seat')
+                    ->where(function ($query) use ($startTime, $endTime) {
+                        $query->whereBetween('start_time', [$startTime, $endTime])
+                            ->orWhereBetween('end_time', [$startTime, $endTime])
+                            ->orWhere(function ($q) use ($startTime, $endTime) {
+                                $q->where('start_time', '<=', $startTime)
+                                    ->where('end_time', '>=', $endTime);
+                            });
+                    })
+                    ->exists();
+
+                if ($hasSeatBooking) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Phòng đã được đặt trong thời gian này. Vui lòng chọn lại.',
+                    ], 409);
+                }
+            }
         }
 
         return response()->json([
@@ -436,11 +506,11 @@ class BookingController extends Controller
     public function editMember(Request $request, $id)
     {
         $request->validate([
-            'name'  => 'required|string|max:255',
+            'name' => 'required|string|max:255',
             'phone' => 'required|string|max:15',
             'image' => 'nullable|image|max:2048',
-            'role'  => 'required|string',
-            'note'  => 'nullable|string',
+            'role' => 'required|string',
+            'note' => 'nullable|string',
         ]);
 
         $user = User::find($id);
@@ -448,10 +518,10 @@ class BookingController extends Controller
         if (!$user) {
             return response()->json(['message' => 'Không tìm thấy thành viên'], 404);
         }
-        $user->name  = $request->name;
+        $user->name = $request->name;
         $user->phone = $request->phone;
-        $user->role  = $request->role;
-        $user->note  = $request->note;
+        $user->role = $request->role;
+        $user->note = $request->note;
         if ($request->hasFile('image')) {
             $path = $request->file('image')->store('users', 'public');
             $user->image = $path;
@@ -461,7 +531,7 @@ class BookingController extends Controller
 
         return response()->json([
             'message' => 'Cập nhật thành viên thành công',
-            'user'    => $user->append('image_url'),
+            'user' => $user->append('image_url'),
         ]);
     }
 }

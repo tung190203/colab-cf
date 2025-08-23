@@ -9,6 +9,7 @@ const router = useRouter();
 const {
   selectedTable,
   selectTable,
+  selectedTableId,
   fetchTables,
   formatCategoryName,
   filteredTables,
@@ -37,6 +38,7 @@ onMounted(async () => {
   if (savedStart) start_time.value = savedStart;
   if (savedEnd) end_time.value = savedEnd;
   if (savedTable) selectedTable.value = savedTable;
+  await applyTimeSelection();
 });
 
 watch(localStartTime, (val) => {
@@ -60,11 +62,17 @@ function openTimePopup(table) {
 
 async function applyTimeSelection() {
   try {
-    const res = await axios.post('/api/check-table', {
-      table_id: tempSelectedTable.value.id,
-      start_time: localStartTime.value,
-      end_time: localEndTime.value
-    });
+    const tableId = tempSelectedTable?.value?.id ? tempSelectedTable?.value?.id : selectedTableId.value;
+    if( !tableId) {
+      return;
+    }
+    const data = {
+      table_id: tableId,
+      start_time: localStartTime.value ? localStartTime.value : sessionStorage.getItem('booking_start_time'),
+      end_time: localEndTime.value ? localEndTime.value : sessionStorage.getItem('booking_end_time'),
+      mode_booking: selectedPackage.value.category === 'basic' ? 'seat' : 'room',
+    };
+    const res = await axios.post('/api/check-table', data);
 
     if (res.data.success) {
       selectTable(tempSelectedTable.value);
@@ -97,15 +105,17 @@ function goBack() {
       <h5 class="mb-3 fw-semibold">{{ formatCategoryName(category) }}</h5>
       <div class="row row-cols-2 row-cols-md-4 g-3">
         <div v-for="t in groupTables" :key="t.code" class="col">
-          <div
-            @click="openTimePopup(t)"
-            class="table-card p-3 text-center rounded shadow-sm cursor-pointer"
-            :class="{ 'table-selected': selectedTable === t.code }"
-          >
+          <div @click="openTimePopup(t)" class="table-card p-3 text-center rounded shadow-sm cursor-pointer"
+            :class="{ 'table-selected': selectedTable === t.code }">
             <div class="fw-bold fs-5">{{ t.code }}</div>
             <div class="mt-1">
               <small v-if="selectedTable === t.code" class="text-success fw-semibold">Đang chọn</small>
               <small v-else class="text-muted">Chưa chọn</small>
+            </div>
+            <div class="mt-1">
+              <small v-if="selectedPackage.category === 'basic'" class="text-muted" style="font-size: 10px;">
+                Còn {{ t.total_seating - t.booked_seats }} / {{ t.total_seating }} ghế trống
+              </small>
             </div>
           </div>
         </div>
@@ -164,30 +174,46 @@ function goBack() {
   display: inline-block;
   border-radius: 3px;
 }
-.legend-box.free { background: #ccc; }
-.legend-box.selected { background: #28a745; }
-.legend-box.occupied { background: #dc3545; }
+
+.legend-box.free {
+  background: #ccc;
+}
+
+.legend-box.selected {
+  background: #28a745;
+}
+
+.legend-box.occupied {
+  background: #dc3545;
+}
+
 .popup-content {
-  width: 90%;          /* chiếm 90% chiều ngang màn hình */
-  max-width: 400px;    /* không vượt quá 400px trên màn hình lớn */
+  width: 90%;
+  /* chiếm 90% chiều ngang màn hình */
+  max-width: 400px;
+  /* không vượt quá 400px trên màn hình lớn */
   margin: auto;
   padding: 1.5rem;
   border-radius: 0.5rem;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   background: white;
-  max-height: 90vh;    /* không vượt quá 90% chiều cao viewport */
-  overflow-y: auto;    /* nếu nội dung cao hơn sẽ scroll bên trong */
+  max-height: 90vh;
+  /* không vượt quá 90% chiều cao viewport */
+  overflow-y: auto;
+  /* nếu nội dung cao hơn sẽ scroll bên trong */
 }
+
 @media (max-width: 480px) {
   .popup-content {
     padding: 1rem;
   }
+
   .popup-content h5 {
     font-size: 1.1rem;
   }
+
   .popup-content .form-control {
     font-size: 0.9rem;
   }
 }
-
 </style>

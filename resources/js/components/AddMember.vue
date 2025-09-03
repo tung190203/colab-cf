@@ -38,6 +38,20 @@ const addMember = async () => {
     return;
   }
 
+  // Validate name: chỉ cho chữ và khoảng trắng
+  const nameRegex = /^[\p{L}\s]+$/u;
+  if (!nameRegex.test(name.value)) {
+    toast.error('Tên không hợp lệ (chỉ chứa chữ và khoảng trắng)');
+    return;
+  }
+
+  // Validate phone: chỉ chứa số, từ 8–15 số
+  const phoneRegex = /^\d{8,15}$/;
+  if (!phoneRegex.test(phone.value)) {
+    toast.error('Số điện thoại không hợp lệ (chỉ chứa số, 8–15 chữ số)');
+    return;
+  }
+
   try {
     const res = await addMemberToColab(
       name.value,

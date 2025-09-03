@@ -168,10 +168,10 @@ function formatPaymentMethod(method) {
                 </div>
               </div>
 
-              <div class="col-md-6">
+              <div v-if="selectedBooking?.table" class="col-md-6">
                 <div class="card shadow-sm p-2">
                   <h6 class="fw-bold mb-1">Bàn</h6>
-                  <p class="mb-0">{{ selectedBooking?.table.code }}</p>
+                  <p class="mb-0">{{ selectedBooking?.table?.code }}</p>
                 </div>
               </div>
               <!-- Số điện thoại -->
@@ -231,6 +231,14 @@ function formatPaymentMethod(method) {
                   <div class="text-center">
                     <img :src="selectedBooking.proof_image" alt="Payment Image" class="img-fluid rounded"
                       style="max-height: 300px; object-fit: cover;">
+                  </div>
+                </div>
+              </div>
+              <div v-if="selectedBooking?.note" class="col-md-12">
+                <div class="card shadow-sm p-2">
+                  <h6 class="fw-bold mb-1">Ghi chú</h6>
+                  <div class="">
+                    <p>{{ selectedBooking?.note }}</p>
                   </div>
                 </div>
               </div>

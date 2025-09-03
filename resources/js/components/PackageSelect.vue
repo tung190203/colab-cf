@@ -27,12 +27,12 @@ function formatVietnamDatetime(date) {
   return `${yyyy}-${MM}-${dd}T${hh}:${mm}`;
 }
 
-function setDefaultTimes() {
+function setDefaultTimes(duration = null) {
   const nowVN = new Date();
   start_time.value = formatVietnamDatetime(nowVN);
 
-  const durationMinutes = selectedPackage.value?.duration || 60;
-  const end = new Date(nowVN.getTime() + durationMinutes*60000);
+  const durationMinutes = duration ?? selectedPackage.value?.duration ?? 60;
+  const end = new Date(nowVN.getTime() + durationMinutes * 60000);
   end_time.value = formatVietnamDatetime(end);
 }
 
@@ -69,6 +69,11 @@ onMounted(async () => {
 
 function goNext() {
   if (!selectedPackage.value) return;
+  if(selectedPackage.value?.category == 'ship') {
+    setDefaultTimes(1);
+    router.push('/extras');
+    return;
+  }
 
   const tableParam = param.get('table');
   if (tableParam) {

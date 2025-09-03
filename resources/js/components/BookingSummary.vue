@@ -2,6 +2,7 @@
 import { useRouter } from 'vue-router';
 import { useBooking } from '../composables/useBooking';
 import { toast } from 'vue3-toastify'
+import { ref } from 'vue';
 
 const router = useRouter();
 
@@ -16,6 +17,8 @@ const {
   name,
   phone,
 } = useBooking();
+
+const note = ref('');
 
 function toVietnamDatetime(localDateTimeStr) {
   const [date, time] = localDateTimeStr.split('T');
@@ -38,6 +41,7 @@ async function pay(method) {
       customer_name: name.value,
       customer_phone: phone.value,
       mode_booking: selectedPackage.value.category === 'basic' ? 'seat' : 'room',
+      note: note.value || null,
     };
 
     const res = await fetch('/api/booking', {
@@ -158,6 +162,10 @@ function callHotline() {
       <div class="d-flex justify-content-between fw-bold fs-5 border-top pt-3 mt-3">
         <div>Tổng</div>
         <div class="text-success">{{ formatVND(total) }}</div>
+      </div>
+      <div class="mb-3 mt-3">
+        <label class="form-label">Ghi chú (tùy chọn)</label>
+        <textarea v-model="note" class="form-control" rows="7" placeholder="Nhập ghi chú nếu có"></textarea>
       </div>
     </div>
 

@@ -59,7 +59,7 @@ function goHome() {
     <h3 class="mb-2 fw-bold" :class="isSuccess ? 'text-success' : 'text-danger'">{{ message }}</h3>
 
     <div v-if="isSuccess" class="confirm text-secondary fw-semibold">
-      <p><strong>Số bàn:</strong> {{ selectedTable }}</p>
+      <p v-if="selectedTable"><strong>Số bàn:</strong> {{ selectedTable }}</p>
       <p><strong>Thời gian kết thúc:</strong> {{ endTime }}</p>
       <p><strong>Tổng:</strong> {{ formatVND(total) }}</p>
       <button class="btn btn-primary mt-3 px-4" @click="goHome">Xong</button>

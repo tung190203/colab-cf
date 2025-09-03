@@ -31,6 +31,7 @@ class BookingController extends Controller
             'customer_name' => 'required|string|max:255',
             'customer_phone' => 'required|string|max:15',
             'mode_booking' => 'required|in:seat,room',
+            'note' => 'nullable|string|max:500',
         ]);
 
         $startTime = isset($validated['start_time'])
@@ -106,6 +107,7 @@ class BookingController extends Controller
                 'phone' => $validated['customer_phone'],
                 'is_served' => 0,
                 'mode_booking' => $validated['mode_booking'],
+                'note' => $validated['note'] ?? null,
             ]);
 
             if (!empty($serviceQuantities)) {
@@ -239,8 +241,7 @@ class BookingController extends Controller
         });
 
     return response()->json($tables);
-}
-
+    }
 
     public function checkTableAvailability(Request $request)
     {

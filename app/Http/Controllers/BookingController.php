@@ -13,6 +13,7 @@ use App\Services\MomoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class BookingController extends Controller
 {
@@ -134,6 +135,7 @@ class BookingController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('Error creating booking: ' . $e->getMessage());
             return response()->json(['message' => 'Lỗi hệ thống, vui lòng thử lại sau'], 500);
         }
     }

@@ -589,6 +589,7 @@ class ComposerStaticInit88970a0117c062eed55fa8728fc43833
         'App\\Models\\Table' => __DIR__ . '/../..' . '/app/Models/Table.php',
         'App\\Models\\User' => __DIR__ . '/../..' . '/app/Models/User.php',
         'App\\Models\\VipCard' => __DIR__ . '/../..' . '/app/Models/VipCard.php',
+        'App\\Notifications\\BookingCreated' => __DIR__ . '/../..' . '/app/Notifications/BookingCreated.php',
         'App\\Providers\\AppServiceProvider' => __DIR__ . '/../..' . '/app/Providers/AppServiceProvider.php',
         'App\\Providers\\BroadcastServiceProvider' => __DIR__ . '/../..' . '/app/Providers/BroadcastServiceProvider.php',
         'App\\Services\\MomoService' => __DIR__ . '/../..' . '/app/Services/MomoService.php',

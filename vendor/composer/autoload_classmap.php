@@ -15,6 +15,7 @@ return array(
     'App\\Models\\Table' => $baseDir . '/app/Models/Table.php',
     'App\\Models\\User' => $baseDir . '/app/Models/User.php',
     'App\\Models\\VipCard' => $baseDir . '/app/Models/VipCard.php',
+    'App\\Notifications\\BookingCreated' => $baseDir . '/app/Notifications/BookingCreated.php',
     'App\\Providers\\AppServiceProvider' => $baseDir . '/app/Providers/AppServiceProvider.php',
     'App\\Providers\\BroadcastServiceProvider' => $baseDir . '/app/Providers/BroadcastServiceProvider.php',
     'App\\Services\\MomoService' => $baseDir . '/app/Services/MomoService.php',

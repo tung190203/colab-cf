@@ -4,7 +4,7 @@ self.addEventListener('push', function(event) {
       self.registration.showNotification(data.title || 'Booking mới', {
         body: data.body || 'Bạn có booking mới!',
         icon: data.icon || '/icon-192x192.png',
-        data: data.url || '/',
+        data: data.url || '/new-bookings',
       })
     );
   });

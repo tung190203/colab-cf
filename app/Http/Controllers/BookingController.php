@@ -31,8 +31,9 @@ class BookingController extends Controller
             'payment_method' => 'required|in:momo,card,none,cash,transfer',
             'customer_name' => 'required|string|max:255',
             'customer_phone' => 'required|string|max:15',
-            'mode_booking' => 'required|in:seat,room',
+            'mode_booking' => 'required|in:seat,room,order',
             'note' => 'nullable|string|max:500',
+            'address' => 'nullable|string|max:255',
         ]);
 
         $startTime = isset($validated['start_time'])
@@ -109,6 +110,7 @@ class BookingController extends Controller
                 'is_served' => 0,
                 'mode_booking' => $validated['mode_booking'],
                 'note' => $validated['note'] ?? null,
+                'address' => $validated['address'] ?? null,
             ]);
 
             if (!empty($serviceQuantities)) {

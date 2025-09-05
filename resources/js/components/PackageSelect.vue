@@ -70,7 +70,7 @@ onMounted(async () => {
 function goNext() {
   if (!selectedPackage.value) return;
   if(selectedPackage.value?.category == 'ship') {
-    setDefaultTimes(1);
+    setDefaultTimes(30);
     router.push('/extras');
     return;
   }

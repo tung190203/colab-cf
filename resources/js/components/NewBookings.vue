@@ -120,6 +120,7 @@ Echo.channel('bookings')
         reg.showNotification('Booking mới', {
           body: `Bạn có booking mới từ: ${e.booking.full_name}`,
           icon: '/icon-192x192.png',
+          data: '/new-bookings',
         });
       }
     });

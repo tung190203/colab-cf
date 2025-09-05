@@ -19,6 +19,7 @@ const {
 } = useBooking();
 
 const note = ref('');
+const address = ref('');
 
 function toVietnamDatetime(localDateTimeStr) {
   const [date, time] = localDateTimeStr.split('T');
@@ -40,8 +41,17 @@ async function pay(method) {
       payment_method: method,
       customer_name: name.value,
       customer_phone: phone.value,
-      mode_booking: selectedPackage.value.category === 'basic' ? 'seat' : 'room',
+      mode_booking:
+        selectedPackage.value.category === 'basic'
+          ? 'seat'
+          : selectedPackage.value.category === 'vip'
+            ? 'room'
+            : selectedPackage.value.category === 'ship'
+              ? 'order'
+              : null,
+
       note: note.value || null,
+      address: address.value || null,
     };
 
     const res = await fetch('/api/booking', {
@@ -143,11 +153,7 @@ function callHotline() {
         <div>{{ formatVND(selectedPackage?.price) ?? '-' }}</div>
       </div>
       <div v-if="extras.length" class="mb-2">
-        <div
-          v-for="(e, i) in extras"
-          :key="i"
-          class="d-flex justify-content-between border-top pt-2 mt-2"
-        >
+        <div v-for="(e, i) in extras" :key="i" class="d-flex justify-content-between border-top pt-2 mt-2">
           <div>{{ e.name }} x{{ e.quantity }}</div>
 
           <!-- nếu totalPrice > 0 thì tính tiền, nếu totalPrice == 0 thì free -->
@@ -162,6 +168,10 @@ function callHotline() {
       <div class="d-flex justify-content-between fw-bold fs-5 border-top pt-3 mt-3">
         <div>Tổng</div>
         <div class="text-success">{{ formatVND(total) }}</div>
+      </div>
+      <div v-if="selectedPackage.category === 'ship'" class="mb-3 mt-3">
+        <label class="form-label">Địa chỉ giao hàng</label>
+        <textarea v-model="address" class="form-control" rows="3" placeholder="Nhập địa chỉ giao hàng"></textarea>
       </div>
       <div class="mb-3 mt-3">
         <label class="form-label">Ghi chú (tùy chọn)</label>
@@ -181,7 +191,7 @@ function callHotline() {
         <i class="bi bi-telephone-fill"></i> Hỗ trợ
         <span class="ms-1">0988992268</span>
 
-</button>
+      </button>
 
     </div>
   </div>

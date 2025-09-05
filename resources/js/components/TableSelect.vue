@@ -63,14 +63,21 @@ function openTimePopup(table) {
 async function applyTimeSelection() {
   try {
     const tableId = tempSelectedTable?.value?.id ? tempSelectedTable?.value?.id : selectedTableId.value;
-    if( !tableId) {
+    if (!tableId) {
       return;
     }
     const data = {
       table_id: tableId,
       start_time: localStartTime.value ? localStartTime.value : sessionStorage.getItem('booking_start_time'),
       end_time: localEndTime.value ? localEndTime.value : sessionStorage.getItem('booking_end_time'),
-      mode_booking: selectedPackage.value.category === 'basic' ? 'seat' : 'room',
+      mode_booking:
+        selectedPackage.value.category === 'basic'
+          ? 'seat'
+          : selectedPackage.value.category === 'vip'
+            ? 'room'
+            : selectedPackage.value.category === 'ship'
+              ? 'order'
+              : null,
     };
     const res = await axios.post('/api/check-table', data);
 
@@ -158,16 +165,20 @@ function goBack() {
   align-items: center;
   justify-content: center;
 }
+
 .table-card {
   transition: all 0.2s ease;
 }
+
 .table-card.table-free:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
+
 .table-selected {
   border: 2px solid #28a745;
 }
+
 .legend-box {
   width: 16px;
   height: 16px;

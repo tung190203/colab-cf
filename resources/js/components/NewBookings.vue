@@ -234,6 +234,14 @@ function formatPaymentMethod(method) {
                   </div>
                 </div>
               </div>
+              <div v-if="selectedBooking?.address" class="col-md-12">
+                <div class="card shadow-sm p-2">
+                  <h6 class="fw-bold mb-1">Địa chỉ giao hàng</h6>
+                  <div class="">
+                    <p>{{ selectedBooking?.address }}</p>
+                  </div>
+                </div>
+              </div>
               <div v-if="selectedBooking?.note" class="col-md-12">
                 <div class="card shadow-sm p-2">
                   <h6 class="fw-bold mb-1">Ghi chú</h6>

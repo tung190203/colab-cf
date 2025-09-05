@@ -120,7 +120,7 @@ function goBack() {
               :checked="form[category].some((e) => e.id === item.id)"
               readonly
             />
-            <label class="mb-0" :for="category + '-' + item.id">{{
+            <label class="mb-0 text-ellipsis" :for="category + '-' + item.id">{{
               item.name
             }}</label>
           </div>
@@ -152,3 +152,14 @@ function goBack() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.text-ellipsis {
+  display: inline-block;
+  max-width: 190px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+</style>

@@ -73,58 +73,29 @@ async function requestNotificationPermission() {
   }
 }
 
-// Trigger push notification
-function sendPushNotification(booking) {
-  if ('serviceWorker' in navigator && Notification.permission === 'granted') {
-    navigator.serviceWorker.getRegistration().then(reg => {
-      if (reg) {
-        reg.showNotification('Booking mới', {
-          body: `Bạn có booking mới từ: ${booking.full_name}`,
-          icon: '/icon-192x192.png',
-          data: '/',
-        });
-      }
-    });
-  }
-}
-
-// async function requestNotificationPermission() {
-//   if ('Notification' in window && Notification.permission !== 'granted') {
-//     await Notification.requestPermission();
-//   }
-// }
-
 onMounted(async () => {
   requestNotificationPermission();
   if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/firebase-messaging-sw.js')
-    .then(reg => console.log('Service Worker registered:', reg));
-}
+    navigator.serviceWorker.register('/firebase-messaging-sw.js')
+      .then(reg => console.log('Service Worker registered:', reg));
+  }
 
   await fetchListBooking();
-  requestNotificationPermission();
-
-//   Echo.channel('bookings')
-//     .listen('.new-booking-created', (e) => {
-//       bookingList.value.unshift(e.booking);
-//       if (currentPage.value !== 1) currentPage.value = 1;
-
-//       toast.info(`Đã có booking mới từ: ${e.booking.full_name}`);
-//       sendPushNotification(e.booking);
-//     });
-// });
-Echo.channel('bookings')
-  .listen('.new-booking-created', (e) => {
-    navigator.serviceWorker.getRegistration().then(reg => {
-      if (reg && Notification.permission === 'granted') {
-        reg.showNotification('Booking mới', {
-          body: `Bạn có booking mới từ: ${e.booking.full_name}`,
-          icon: '/icon-192x192.png',
-          data: '/new-bookings',
-        });
-      }
+  Echo.channel('bookings')
+    .listen('.new-booking-created', (e) => {
+      bookingList.value.unshift(e.booking);
+      if (currentPage.value !== 1) currentPage.value = 1;
+      toast.info(`Đã có booking mới từ: ${e.booking.full_name}`);
+      navigator.serviceWorker.getRegistration().then(reg => {
+        if (reg && Notification.permission === 'granted') {
+          reg.showNotification('Booking mới', {
+            body: `Bạn có booking mới từ: ${e.booking.full_name}`,
+            icon: '/icon-192x192.png',
+            data: '/new-bookings',
+          });
+        }
+      });
     });
-  });
 });
 </script>
 
@@ -180,13 +151,15 @@ Echo.channel('bookings')
               <p><strong>Tên:</strong> {{ selectedBooking.full_name }}</p>
               <p><strong>Số điện thoại:</strong> {{ selectedBooking.phone || 'N/A' }}</p>
               <p><strong>Gói:</strong> {{ selectedBooking.package.name }}</p>
-              <p><strong>Thời gian:</strong> {{ formatBookingTime(selectedBooking.start_time, selectedBooking.end_time) }}</p>
+              <p><strong>Thời gian:</strong> {{ formatBookingTime(selectedBooking.start_time, selectedBooking.end_time)
+                }}</p>
               <p><strong>Phương thức thanh toán:</strong> {{ formatPaymentMethod(selectedBooking.payment_method) }}</p>
             </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
-            <button type="button" class="btn btn-success" @click="markAsServed(selectedBooking.id)">Đánh dấu đã phục vụ</button>
+            <button type="button" class="btn btn-success" @click="markAsServed(selectedBooking.id)">Đánh dấu đã phục
+              vụ</button>
           </div>
         </div>
       </div>
@@ -200,6 +173,12 @@ Echo.channel('bookings')
   border-color: #20451F;
   color: white;
 }
-.pagination .page-link { color: #555555; }
-.pagination .page-link:hover { color: #20451F; }
+
+.pagination .page-link {
+  color: #555555;
+}
+
+.pagination .page-link:hover {
+  color: #20451F;
+}
 </style>

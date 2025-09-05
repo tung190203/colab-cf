@@ -9,6 +9,7 @@ use App\Models\Package;
 use App\Models\Extra;
 use App\Models\User;
 use App\Models\VipCard;
+use App\Notifications\BookingCreated;
 use App\Services\MomoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -121,6 +122,8 @@ class BookingController extends Controller
                 $booking->load('package', 'table', 'extras');
                 $today = Carbon::today();
                 if (Carbon::parse($booking->start_time)->isSameDay($today)) {
+                    $user = User::where('role', 'admin')->first();
+                    $user->notify(new BookingCreated($booking));
                     broadcast(new NewBookingCreated($booking))->toOthers();
                 }
             }
@@ -174,6 +177,8 @@ class BookingController extends Controller
             $today = Carbon::today();
 
             if (Carbon::parse($booking->start_time)->isSameDay($today)) {
+                $user = User::where('role', 'admin')->first();
+                    $user->notify(new BookingCreated($booking));
                 broadcast(new NewBookingCreated($booking))->toOthers();
             }
         } else {
@@ -387,6 +392,8 @@ class BookingController extends Controller
             }
         }
         $booking->load('package', 'table', 'extras');
+        $user = User::where('role', 'admin')->first();
+                    $user->notify(new BookingCreated($booking));
         broadcast(new NewBookingCreated($booking))->toOthers();
 
         return response()->json([

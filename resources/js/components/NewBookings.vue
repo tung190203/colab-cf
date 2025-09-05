@@ -262,7 +262,7 @@ function formatPaymentMethod(method) {
       </div>
     </div>
   </div>
-  <audio ref="notificationSound" src="/sounds/notification.mp3" preload="auto"></audio>
+  <audio ref="notificationSound" src="/sounds/noti.mp3" preload="auto"></audio>
 </template>
 
 <style scoped>

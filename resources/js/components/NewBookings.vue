@@ -88,11 +88,11 @@ function sendPushNotification(booking) {
   }
 }
 
-async function requestNotificationPermission() {
-  if ('Notification' in window && Notification.permission !== 'granted') {
-    await Notification.requestPermission();
-  }
-}
+// async function requestNotificationPermission() {
+//   if ('Notification' in window && Notification.permission !== 'granted') {
+//     await Notification.requestPermission();
+//   }
+// }
 
 onMounted(async () => {
   requestNotificationPermission();

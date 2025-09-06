@@ -102,34 +102,38 @@ onMounted(async () => {
 <template>
   <div class="container py-4">
     <h2 class="mb-4">Danh sách Booking</h2>
+
     <div class="row g-3">
-      <div v-if="bookingList.length === 0" class="text-center text-muted py-5">
-        Không có booking nào hiện tại.
-      </div>
+        <div v-if="bookingList.length === 0" class="text-center text-muted py-5">
+      Không có booking nào hiện tại.
+    </div>
       <div v-for="(booking, index) in paginatedBookingList" :key="booking.id" class="col-md-4">
         <div class="card h-100 shadow-sm cursor-pointer" @click="openModal(booking)">
           <div class="card-body">
             <div class="d-flex justify-content-between align-items-center mb-2">
               <span class="fw-bold">#{{ (currentPage - 1) * itemsPerPage + index + 1 }}</span>
-              <span :class="{ 'bg-warning text-dark': booking.is_served === 0 }" class="badge">
+              <span :class="{
+                'bg-warning text-dark': booking.is_served === 0,
+              }" class="badge">
                 {{ formatServedStatus(booking.is_served) }}
               </span>
             </div>
-            <h5 class="card-title">{{ booking.full_name }}</h5>
+            <h5 class="card-title text-base">{{ booking.full_name }}</h5>
             <p class="card-text text-capitalize">Gói: {{ booking.package.name }} ({{ booking.package.category }})</p>
-            <p class="card-text text-muted small">{{ formatBookingTime(booking.start_time, booking.end_time) }}</p>
+            <p class="card-text text-muted small" style="font-size: 12.5px;">
+              {{ formatBookingTime(booking.start_time, booking.end_time) }}
+            </p>
           </div>
         </div>
       </div>
     </div>
-
     <!-- Pagination -->
     <nav v-if="totalPages > 1" class="mt-4">
       <ul class="pagination justify-content-center">
         <li class="page-item" :class="{ disabled: currentPage === 1 }">
           <button class="page-link" @click="goToPage(currentPage - 1)">Previous</button>
         </li>
-        <li v-for="page in totalPages" :key="page" :class="{ active: currentPage === page }">
+        <li class="page-item" v-for="page in totalPages" :key="page" :class="{ active: currentPage === page }">
           <button class="page-link" @click="goToPage(page)">{{ page }}</button>
         </li>
         <li class="page-item" :class="{ disabled: currentPage === totalPages }">
@@ -138,28 +142,112 @@ onMounted(async () => {
       </ul>
     </nav>
 
-    <!-- Modal -->
-    <div class="modal fade" id="bookingModal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered modal-lg">
+    <!-- Modal Bootstrap -->
+    <div class="modal fade" id="bookingModal" tabindex="-1" aria-labelledby="bookingModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg"> <!-- modal-lg cho to hơn -->
         <div class="modal-content">
           <div class="modal-header bg-success text-white">
-            <h5 class="modal-title">Chi tiết đơn đặt</h5>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            <h5 class="modal-title" id="bookingModalLabel">Chi tiết đơn đặt</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
-            <div v-if="selectedBooking">
-              <p><strong>Tên:</strong> {{ selectedBooking.full_name }}</p>
-              <p><strong>Số điện thoại:</strong> {{ selectedBooking.phone || 'N/A' }}</p>
-              <p><strong>Gói:</strong> {{ selectedBooking.package.name }}</p>
-              <p><strong>Thời gian:</strong> {{ formatBookingTime(selectedBooking.start_time, selectedBooking.end_time)
-                }}</p>
-              <p><strong>Phương thức thanh toán:</strong> {{ formatPaymentMethod(selectedBooking.payment_method) }}</p>
+            <div class="row g-3">
+              <!-- Gói đặt -->
+              <div class="col-md-6">
+                <div class="card shadow-sm p-2">
+                  <h6 class="fw-bold mb-1">Gói đặt</h6>
+                  <p class="mb-0 text-capitalize">{{ selectedBooking?.package.category }}</p>
+                </div>
+              </div>
+
+              <div v-if="selectedBooking?.table" class="col-md-6">
+                <div class="card shadow-sm p-2">
+                  <h6 class="fw-bold mb-1">Bàn</h6>
+                  <p class="mb-0">{{ selectedBooking?.table?.code }}</p>
+                </div>
+              </div>
+              <!-- Số điện thoại -->
+              <div class="col-md-6">
+                <div class="card shadow-sm p-2">
+                  <h6 class="fw-bold mb-1">Tên người đặt</h6>
+                  <p class="mb-0">{{ selectedBooking?.full_name || 'N/A' }}</p>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="card shadow-sm p-2">
+                  <h6 class="fw-bold mb-1">Số điện thoại</h6>
+                  <p class="mb-0">{{ selectedBooking?.phone || 'N/A' }}</p>
+                </div>
+              </div>
+
+              <!-- Thời gian -->
+              <div class="col-md-6">
+                <div class="card shadow-sm p-2">
+                  <h6 class="fw-bold mb-1">Thời gian</h6>
+                  <p class="mb-0">{{ selectedBooking ? formatBookingTime(selectedBooking.start_time,
+                    selectedBooking.end_time) : '' }}</p>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="card shadow-sm p-2">
+                  <h6 class="fw-bold mb-1">Phương thức thanh toán</h6>
+                  <p class="mb-0">{{ formatPaymentMethod(selectedBooking?.payment_method) || 'N/A' }}</p>
+                </div>
+              </div>
+
+              <!-- Extras -->
+              <div class="col-12">
+                <div class="card shadow-sm p-3">
+                  <h6 class="fw-bold mb-2">Dịch vụ thêm</h6>
+                  <div v-if="selectedBooking?.extras?.length">
+                    <ul class="list-group list-group-flush">
+                      <li v-for="extra in selectedBooking.extras" :key="extra.id"
+                        class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                          <strong>{{ extra.name }}</strong> ({{ formatCategoryName(extra.category).charAt(0).toUpperCase() + formatCategoryName(extra.category).slice(1).toLowerCase() }})
+                        </div>
+                        <div>
+                          x{{ extra.pivot.quantity }}
+                        </div>
+                      </li>
+                    </ul>
+                  </div>
+                  <div v-else class="text-muted">
+                    Không có dịch vụ thêm.
+                  </div>
+                </div>
+              </div>
+              <div  v-if="selectedBooking?.proof_image" class="col-md-12">
+                <div class="card shadow-sm p-2">
+                  <h6 class="fw-bold mb-1">Hình ảnh thanh toán</h6>
+                  <div class="text-center">
+                    <img :src="selectedBooking.proof_image" alt="Payment Image" class="img-fluid rounded"
+                      style="max-height: 300px; object-fit: cover;">
+                  </div>
+                </div>
+              </div>
+              <div v-if="selectedBooking?.address" class="col-md-12">
+                <div class="card shadow-sm p-2">
+                  <h6 class="fw-bold mb-1">Địa chỉ giao hàng</h6>
+                  <div class="">
+                    <p>{{ selectedBooking?.address }}</p>
+                  </div>
+                </div>
+              </div>
+              <div v-if="selectedBooking?.note" class="col-md-12">
+                <div class="card shadow-sm p-2">
+                  <h6 class="fw-bold mb-1">Ghi chú</h6>
+                  <div class="">
+                    <p>{{ selectedBooking?.note }}</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
-            <button type="button" class="btn btn-success" @click="markAsServed(selectedBooking.id)">Đánh dấu đã phục
-              vụ</button>
+            <button type="button" class="btn btn-success"
+              @click="markAsServed(selectedBooking.id)">Đánh dấu là đã phục vụ</button>
           </div>
         </div>
       </div>

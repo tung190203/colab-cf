@@ -382,9 +382,11 @@ class BookingController extends Controller
         $booking = Booking::find($request->booking_id);
         $booking->proof_image = $path;
         $booking->status = 'confirmed';
-        $booking->table->status = 'occupied';
+        if ($booking->table) {
+            $booking->table->update(['status' => 'occupied']);
+        }
         $booking->save();
-        if ($booking->table->code == 'C1') {
+        if ($booking->table && $booking->table->code == 'C1') {
             $listTableOccupied = Table::whereIn('code', ['C2', 'C3'])->get();
             foreach ($listTableOccupied as $table) {
                 $table->status = 'occupied';

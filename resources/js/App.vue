@@ -59,8 +59,14 @@ const showBackButton = computed(() => {
         <router-view />
       </div>
     </div> -->
-    <div class="booking-root container py-5">
-      <div class="card booking-card mx-auto pt-0 pb-4 mt-3 px-4 shadow position-relative">
+    <div v-if="route.path.startsWith('/admin') || route.path.startsWith('/staff')" class="admin-root">
+      <router-view />
+    </div>
+    <div v-else class="booking-root container" :class="{ 'center-content': ['Welcome', 'Auth'].includes(route.name) }">
+      <div v-if="['Welcome', 'Auth', 'BookingMain', 'BookingSummary', 'StatusPage', 'VietQRPage'].includes(route.name)" class="w-100">
+        <router-view />
+      </div>
+      <div v-else class="card booking-card mx-auto pt-0 pb-4 mt-3 px-4 shadow position-relative">
         <!-- Nút back -->
         <button v-if="showBackButton" class="back-btn" @click="$router.back()">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24"
@@ -69,7 +75,7 @@ const showBackButton = computed(() => {
           </svg>
         </button>
 
-        <div class="mb-4 text-center">
+        <div v-if="!['Welcome', 'Auth'].includes(route.name)" class="mb-4 text-center">
           <img src="../images/logo.png" alt="logo" class="rounded mt-4"
             style="width: 160px; display: flex; margin: 0 auto;" />
           <div>
@@ -112,9 +118,15 @@ const showBackButton = computed(() => {
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding-top: 40px;
+  padding: 40px 20px;
   box-sizing: border-box;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  transition: all 0.3s ease;
+}
+
+.booking-root.center-content {
+  align-items: center;
+  padding-top: 0;
 }
 
 .booking-card {
@@ -329,6 +341,18 @@ const showBackButton = computed(() => {
   cursor: pointer;
 }
 
+@media (min-width: 1025px) {
+  .booking-root:not(.center-content) {
+    padding-top: 120px;
+  }
+
+  /* Giảm padding top cho các trang kết quả/thanh toán để không bị thừa scroll */
+  .booking-root:has(.status-page),
+  .booking-root:has(.vietqr-page) {
+    padding-top: 40px;
+  }
+}
+
 @media (max-width: 480px) {
   .step-content {
     padding: 0;
@@ -460,12 +484,6 @@ const showBackButton = computed(() => {
   .mobile-menu-wrapper,
   .mobile-menu {
     display: none !important;
-  }
-}
-
-@media (min-width: 1025px) {
-  .booking-root {
-    padding-top: 120px;
   }
 }
 

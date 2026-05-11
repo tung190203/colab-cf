@@ -10,6 +10,8 @@ const STORAGE_KEYS = {
 
 const START_TIME_KEY = 'booking_start_time';
 const END_TIME_KEY = 'booking_end_time';
+const BOOKING_ID_KEY = 'booking_current_id';
+
 const packages = ref({});
 const tables = ref([]);
 const bookingList = ref([]);
@@ -17,12 +19,14 @@ const start_time = ref(null);
 const end_time = ref(null);
 const name = ref(null);
 const phone = ref(null);
+const currentBookingId = ref(null);
 
 name.value = sessionStorage.getItem('customer_name') || null;
 phone.value = sessionStorage.getItem('customer_phone') || null;
 
 start_time.value = sessionStorage.getItem(START_TIME_KEY) || null;
 end_time.value = sessionStorage.getItem(END_TIME_KEY) || null;
+currentBookingId.value = sessionStorage.getItem(BOOKING_ID_KEY) || null;
 
 watch(start_time, (val) => {
   if (val) {
@@ -53,8 +57,15 @@ watch(phone, (val) => {
   } else {
     sessionStorage.removeItem('customer_phone');
   }
-}
-);
+});
+
+watch(currentBookingId, (val) => {
+  if (val) {
+    sessionStorage.setItem(BOOKING_ID_KEY, val);
+  } else {
+    sessionStorage.removeItem(BOOKING_ID_KEY);
+  }
+});
 
 // Khôi phục từ sessionStorage hoặc mặc định ban đầu
 const selectedPackage = ref(
@@ -119,9 +130,14 @@ watch(
   form,
   (val) => {
     sessionStorage.setItem(STORAGE_KEYS.form, JSON.stringify(val));
+    currentBookingId.value = null;
   },
   { deep: true }
 );
+
+watch([selectedPackage, selectedTable, selectedTableId, start_time, end_time], () => {
+  currentBookingId.value = null;
+}, { deep: true });
 
 const formatVND = (v) =>
   (v || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ' đ';
@@ -250,6 +266,8 @@ function resetAll() {
   sessionStorage.removeItem('customer_name');
   sessionStorage.removeItem('customer_phone');
   sessionStorage.removeItem('freeDrinks');
+  sessionStorage.removeItem(BOOKING_ID_KEY);
+  currentBookingId.value = null;
 
   fetchPackages();
   fetchTables();
@@ -292,6 +310,8 @@ function formatCategoryName(key) {
       return 'DỊCH VỤ VĂN PHÒNG';
     case 'other_services':
       return 'DICH VỤ KHÁC';
+    case 'open_area':
+      return 'KHU MỞ';
     default:
       return 'DICH VỤ KHÁC';
   }
@@ -510,6 +530,7 @@ export function useBooking() {
     fetchListBooking,
     bookingList,
     fetchUserByPhone,
-    addMemberToColab
+    addMemberToColab,
+    currentBookingId
   };
 }

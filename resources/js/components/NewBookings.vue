@@ -1,26 +1,44 @@
 <script setup>
-import { ref, onMounted, computed, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue';
 import Echo from '../echo.js';
 import { useBooking } from '../composables/useBooking';
+import { useAdminAuth } from '../composables/useAdminAuth';
 import { toast } from 'vue3-toastify';
+import AdminLayout from './admin/AdminLayout.vue';
+import { 
+    RefreshCw, 
+    Clock, 
+    MapPin, 
+    ChevronLeft, 
+    ChevronRight, 
+    CheckCircle2, 
+    X, 
+    Package,
+    Phone
+} from 'lucide-vue-next';
 
 const { fetchListBooking, bookingList, formatCategoryName } = useBooking();
+const { authHeader } = useAdminAuth();
+
 const selectedBooking = ref(null);
 let modalInstance = null;
 const currentPage = ref(1);
-const itemsPerPage = 30;
+const itemsPerPage = 12;
+const loading = ref(true);
+
 const totalPages = computed(() => Math.ceil(bookingList.value.length / itemsPerPage));
 const paginatedBookingList = computed(() => {
   const start = (currentPage.value - 1) * itemsPerPage;
   return bookingList.value.slice(start, start + itemsPerPage);
 });
 
-// Modal
+// Modal logic
 function openModal(booking) {
   selectedBooking.value = booking;
   nextTick(() => {
     if (!modalInstance) {
       const modalEl = document.getElementById('bookingModal');
+      // @ts-ignore
       modalInstance = new bootstrap.Modal(modalEl, {});
     }
     modalInstance.show();
@@ -34,25 +52,33 @@ function goToPage(page) {
 function formatBookingTime(start, end) {
   const startDate = new Date(start);
   const endDate = new Date(end);
-  const optionsTime = { hour: 'numeric', minute: '2-digit', hour12: true };
+  const optionsTime = { hour: 'numeric', minute: '2-digit', hour12: false };
   const optionsDate = { day: '2-digit', month: '2-digit', year: 'numeric' };
-  return `${startDate.toLocaleTimeString('en-US', optionsTime)} - ${endDate.toLocaleTimeString('en-US', optionsTime)} - ${startDate.toLocaleDateString('en-GB', optionsDate)}`;
+  return `${startDate.toLocaleTimeString('vi-VN', optionsTime)} - ${endDate.toLocaleTimeString('vi-VN', optionsTime)} | ${startDate.toLocaleDateString('vi-VN', optionsDate)}`;
 }
 
-function formatServedStatus(isServed) {
-  return isServed === 0 ? 'Chưa phục vụ' : 'Đã phục vụ';
-}
-
-function markAsServed(bookingId) {
-  fetch(`/api/booking/mark-as-served`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ booking_id: bookingId }),
-  });
-  toast.success('Đánh dấu đã phục vụ thành công!');
-  bookingList.value = bookingList.value.filter(b => b.id !== bookingId);
-  if (modalInstance) modalInstance.hide();
-  if ((currentPage.value - 1) * itemsPerPage >= bookingList.value.length && currentPage.value > 1) currentPage.value--;
+async function markAsServed(bookingId) {
+  try {
+    const res = await fetch(`/api/booking/mark-as-served`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        ...authHeader()
+      },
+      body: JSON.stringify({ booking_id: bookingId }),
+    });
+    
+    if (res.ok) {
+        toast.success('Đã xác nhận phục vụ!');
+        bookingList.value = bookingList.value.filter(b => b.id !== bookingId);
+        if (modalInstance) modalInstance.hide();
+        if ((currentPage.value - 1) * itemsPerPage >= bookingList.value.length && currentPage.value > 1) {
+            currentPage.value--;
+        }
+    }
+  } catch (e) {
+    toast.error('Có lỗi xảy ra khi xác nhận');
+  }
 }
 
 function formatPaymentMethod(method) {
@@ -65,208 +91,278 @@ function formatPaymentMethod(method) {
   }
 }
 
-// Request notification permission
-async function requestNotificationPermission() {
-  if ('Notification' in window && Notification.permission !== 'granted') {
-    const permission = await Notification.requestPermission();
-    if (permission === 'granted') console.log('Notification permission granted.');
-  }
-}
-
 onMounted(async () => {
-  requestNotificationPermission();
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/firebase-messaging-sw.js')
-      .then(reg => console.log('Service Worker registered:', reg));
-  }
-
+  loading.value = true;
   await fetchListBooking();
+  loading.value = false;
+
+  // Lắng nghe sự kiện real-time
   Echo.channel('bookings')
     .listen('.new-booking-created', (e) => {
-      bookingList.value.unshift(e.booking);
-      if (currentPage.value !== 1) currentPage.value = 1;
-      toast.info(`Đã có booking mới từ: ${e.booking.full_name}`);
-      navigator.serviceWorker.getRegistration().then(reg => {
-        if (reg && Notification.permission === 'granted') {
-          reg.showNotification('Booking mới', {
-            body: `Bạn có booking mới từ: ${e.booking.full_name}`,
-            icon: '/icon-192x192.png',
-            data: '/new-bookings',
-          });
-        }
-      });
+      const exists = bookingList.value.some(b => b.id === e.booking.id);
+      if (!exists) {
+          bookingList.value.unshift(e.booking);
+          if (currentPage.value !== 1) currentPage.value = 1;
+          toast.info(`Đơn mới từ: ${e.booking.full_name}`);
+      }
     });
+});
+
+onUnmounted(() => {
+    Echo.leave('bookings');
 });
 </script>
 
 <template>
-  <div class="container py-4">
-    <h2 class="mb-4">Danh sách Booking</h2>
+  <AdminLayout>
+    <template #title>Quản lý đơn hàng</template>
 
-    <div class="row g-3">
-        <div v-if="bookingList.length === 0" class="text-center text-muted py-5">
-      Không có booking nào hiện tại.
-    </div>
-      <div v-for="(booking, index) in paginatedBookingList" :key="booking.id" class="col-md-4">
-        <div class="card h-100 shadow-sm cursor-pointer" @click="openModal(booking)">
-          <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <span class="fw-bold">#{{ (currentPage - 1) * itemsPerPage + index + 1 }}</span>
-              <span :class="{
-                'bg-warning text-dark': booking.is_served === 0,
-              }" class="badge">
-                {{ formatServedStatus(booking.is_served) }}
-              </span>
+    <div class="nb-wrap">
+      <!-- Toolbar/Stats -->
+      <div class="nb-toolbar">
+        <div class="nb-stats">
+          <span class="nb-stats-dot"></span>
+          <strong>{{ bookingList.length }}</strong> đơn đang chờ phục vụ
+        </div>
+        <div class="nb-refresh">
+            <button @click="fetchListBooking" class="btn-refresh">
+                <RefreshCw :size="16" class="me-2" />
+                Làm mới
+            </button>
+        </div>
+      </div>
+
+      <!-- Grid -->
+      <div v-if="loading" class="nb-loading">
+        <div class="nb-spinner"></div>
+      </div>
+
+      <div v-else-if="bookingList.length === 0" class="nb-empty">
+        <div class="nb-empty-icon"><Package :size="64" /></div>
+        <h3>Hiện không có đơn mới</h3>
+        <p>Hệ thống sẽ tự động cập nhật khi có khách đặt bàn.</p>
+      </div>
+
+      <div v-else class="nb-grid">
+        <div v-for="(booking, index) in paginatedBookingList" :key="booking.id" class="nb-card" @click="openModal(booking)">
+          <div class="nb-card-header">
+            <span class="nb-id">#{{ (currentPage - 1) * itemsPerPage + index + 1 }}</span>
+            <span class="nb-badge">Chờ phục vụ</span>
+          </div>
+          
+          <div class="nb-card-body">
+            <h4 class="nb-name">{{ booking.full_name }}</h4>
+            <div class="nb-package">
+                <span class="nb-pkg-tag">{{ booking.package.name }}</span>
+                <span class="nb-pkg-cat">{{ booking.package.category }}</span>
             </div>
-            <h5 class="card-title text-base">{{ booking.full_name }}</h5>
-            <p class="card-text text-capitalize">Gói: {{ booking.package.name }} ({{ booking.package.category }})</p>
-            <p class="card-text text-muted small" style="font-size: 12.5px;">
-              {{ formatBookingTime(booking.start_time, booking.end_time) }}
-            </p>
+
+            <div class="nb-meta">
+              <div class="nb-meta-item">
+                <Clock :size="14" />
+                {{ formatBookingTime(booking.start_time, booking.end_time) }}
+              </div>
+              <div v-if="booking.table" class="nb-meta-item nb-meta-item--highlight">
+                <MapPin :size="14" />
+                Bàn/Phòng: <strong>{{ booking.table.code }}</strong>
+              </div>
+            </div>
+          </div>
+          
+          <div class="nb-card-footer">
+            <span class="nb-payment">{{ formatPaymentMethod(booking.payment_method) }}</span>
+            <span class="nb-price">{{ new Intl.NumberFormat('vi-VN').format(booking.total_price) }} ₫</span>
           </div>
         </div>
       </div>
+
+      <!-- Pagination -->
+      <div v-if="totalPages > 1" class="nb-pagination">
+        <button :disabled="currentPage === 1" @click="goToPage(currentPage - 1)" class="nb-page-btn">
+            <ChevronLeft :size="18" />
+        </button>
+        <button 
+          v-for="p in totalPages" :key="p" 
+          @click="goToPage(p)" 
+          class="nb-page-btn" 
+          :class="{ active: currentPage === p }"
+        >{{ p }}</button>
+        <button :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)" class="nb-page-btn">
+            <ChevronRight :size="18" />
+        </button>
+      </div>
     </div>
-    <!-- Pagination -->
-    <nav v-if="totalPages > 1" class="mt-4">
-      <ul class="pagination justify-content-center">
-        <li class="page-item" :class="{ disabled: currentPage === 1 }">
-          <button class="page-link" @click="goToPage(currentPage - 1)">Previous</button>
-        </li>
-        <li class="page-item" v-for="page in totalPages" :key="page" :class="{ active: currentPage === page }">
-          <button class="page-link" @click="goToPage(page)">{{ page }}</button>
-        </li>
-        <li class="page-item" :class="{ disabled: currentPage === totalPages }">
-          <button class="page-link" @click="goToPage(currentPage + 1)">Next</button>
-        </li>
-      </ul>
-    </nav>
 
-    <!-- Modal Bootstrap -->
-    <div class="modal fade" id="bookingModal" tabindex="-1" aria-labelledby="bookingModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered modal-lg"> <!-- modal-lg cho to hơn -->
-        <div class="modal-content">
-          <div class="modal-header bg-success text-white">
-            <h5 class="modal-title" id="bookingModalLabel">Chi tiết đơn đặt</h5>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <div class="row g-3">
-              <!-- Gói đặt -->
-              <div class="col-md-6">
-                <div class="card shadow-sm p-2">
-                  <h6 class="fw-bold mb-1">Gói đặt</h6>
-                  <p class="mb-0 text-capitalize">{{ selectedBooking?.package.category }}</p>
-                </div>
-              </div>
+    <!-- Modal Chi Tiết -->
+    <Teleport to="body">
+      <div class="modal fade" id="bookingModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+          <div class="modal-content nb-modal">
+            <div class="modal-header nb-modal-header">
+              <h5 class="modal-title">CHI TIẾT ĐƠN #{{ selectedBooking?.id }}</h5>
+              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body nb-modal-body">
+              <div class="row g-4">
+                <div class="col-md-7">
+                  <div class="nb-detail-box">
+                    <label>Khách hàng</label>
+                    <div class="nb-val-main">{{ selectedBooking?.full_name }}</div>
+                    <div class="nb-val-sub"><Phone :size="14" class="me-1" /> {{ selectedBooking?.phone }}</div>
+                  </div>
 
-              <div v-if="selectedBooking?.table" class="col-md-6">
-                <div class="card shadow-sm p-2">
-                  <h6 class="fw-bold mb-1">Bàn</h6>
-                  <p class="mb-0">{{ selectedBooking?.table?.code }}</p>
+                  <div class="nb-detail-box mt-3">
+                    <label>Dịch vụ đặt</label>
+                    <div class="nb-val-main">{{ selectedBooking?.package.name }}</div>
+                    <div class="nb-val-info">
+                        <strong>Vị trí: {{ selectedBooking?.table?.code || 'Chưa chọn' }}</strong>
+                    </div>
+                    <div class="nb-val-sub"><Clock :size="14" class="me-1" /> {{ selectedBooking ? formatBookingTime(selectedBooking.start_time, selectedBooking.end_time) : '' }}</div>
+                    
+                    <div v-if="selectedBooking?.address" class="nb-val-address mt-2">
+                        <MapPin :size="14" class="me-1" /> {{ selectedBooking.address }}
+                    </div>
+                    <div v-if="selectedBooking?.note" class="nb-val-note mt-2">
+                        <em>{{ selectedBooking.note }}</em>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <!-- Số điện thoại -->
-              <div class="col-md-6">
-                <div class="card shadow-sm p-2">
-                  <h6 class="fw-bold mb-1">Tên người đặt</h6>
-                  <p class="mb-0">{{ selectedBooking?.full_name || 'N/A' }}</p>
-                </div>
-              </div>
-              <div class="col-md-6">
-                <div class="card shadow-sm p-2">
-                  <h6 class="fw-bold mb-1">Số điện thoại</h6>
-                  <p class="mb-0">{{ selectedBooking?.phone || 'N/A' }}</p>
-                </div>
-              </div>
 
-              <!-- Thời gian -->
-              <div class="col-md-6">
-                <div class="card shadow-sm p-2">
-                  <h6 class="fw-bold mb-1">Thời gian</h6>
-                  <p class="mb-0">{{ selectedBooking ? formatBookingTime(selectedBooking.start_time,
-                    selectedBooking.end_time) : '' }}</p>
-                </div>
-              </div>
-              <div class="col-md-6">
-                <div class="card shadow-sm p-2">
-                  <h6 class="fw-bold mb-1">Phương thức thanh toán</h6>
-                  <p class="mb-0">{{ formatPaymentMethod(selectedBooking?.payment_method) || 'N/A' }}</p>
-                </div>
-              </div>
+                <div class="col-md-5">
+                  <div class="nb-detail-box h-100">
+                    <label>Dịch vụ thêm</label>
+                    <div v-if="selectedBooking?.extras?.length" class="nb-extras-list">
+                      <div v-for="extra in selectedBooking.extras" :key="extra.id" class="nb-extra-item">
+                        <span>{{ extra.name }}</span>
+                        <span class="nb-extra-qty">x{{ extra.pivot.quantity }}</span>
+                      </div>
+                    </div>
+                    <div v-else class="nb-empty-small">Không có</div>
 
-              <!-- Extras -->
-              <div class="col-12">
-                <div class="card shadow-sm p-3">
-                  <h6 class="fw-bold mb-2">Dịch vụ thêm</h6>
-                  <div v-if="selectedBooking?.extras?.length">
-                    <ul class="list-group list-group-flush">
-                      <li v-for="extra in selectedBooking.extras" :key="extra.id"
-                        class="list-group-item d-flex justify-content-between align-items-center">
-                        <div>
-                          <strong>{{ extra.name }}</strong> ({{ formatCategoryName(extra.category).charAt(0).toUpperCase() + formatCategoryName(extra.category).slice(1).toLowerCase() }})
+                    <div v-if="selectedBooking?.proof_image" class="mt-3">
+                        <label>Minh chứng thanh toán</label>
+                        <div class="nb-proof-wrap">
+                            <img :src="'/storage/' + selectedBooking.proof_image" class="img-fluid rounded" />
                         </div>
-                        <div>
-                          x{{ extra.pivot.quantity }}
-                        </div>
-                      </li>
-                    </ul>
-                  </div>
-                  <div v-else class="text-muted">
-                    Không có dịch vụ thêm.
-                  </div>
-                </div>
-              </div>
-              <div  v-if="selectedBooking?.proof_image" class="col-md-12">
-                <div class="card shadow-sm p-2">
-                  <h6 class="fw-bold mb-1">Hình ảnh thanh toán</h6>
-                  <div class="text-center">
-                    <img :src="selectedBooking.proof_image" alt="Payment Image" class="img-fluid rounded"
-                      style="max-height: 300px; object-fit: cover;">
-                  </div>
-                </div>
-              </div>
-              <div v-if="selectedBooking?.address" class="col-md-12">
-                <div class="card shadow-sm p-2">
-                  <h6 class="fw-bold mb-1">Địa chỉ giao hàng</h6>
-                  <div class="">
-                    <p>{{ selectedBooking?.address }}</p>
-                  </div>
-                </div>
-              </div>
-              <div v-if="selectedBooking?.note" class="col-md-12">
-                <div class="card shadow-sm p-2">
-                  <h6 class="fw-bold mb-1">Ghi chú</h6>
-                  <div class="">
-                    <p>{{ selectedBooking?.note }}</p>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
-            <button type="button" class="btn btn-success"
-              @click="markAsServed(selectedBooking.id)">Đánh dấu là đã phục vụ</button>
+            <div class="modal-footer nb-modal-footer">
+              <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">Đóng</button>
+              <button type="button" class="btn btn-success rounded-3 px-4 fw-bold d-flex align-items-center" @click="markAsServed(selectedBooking.id)">
+                <CheckCircle2 :size="18" class="me-2" />
+                Xác nhận đã phục vụ
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </div>
+    </Teleport>
+  </AdminLayout>
 </template>
 
 <style scoped>
-.pagination .page-item.active .page-link {
-  background-color: #20451F;
-  border-color: #20451F;
-  color: white;
+/* CSS giữ nguyên, chỉ chỉnh sửa icon SVG cũ sang Lucide components */
+.nb-wrap { max-width: 1200px; margin: 0 auto; }
+
+.nb-toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 24px; flex-wrap: wrap; gap: 12px;
 }
 
-.pagination .page-link {
-  color: #555555;
+.nb-stats {
+    display: flex; align-items: center; gap: 8px;
+    background: white; padding: 10px 18px; border-radius: 100px;
+    font-size: 0.9rem; color: #444; box-shadow: 0 2px 8px rgba(0,0,0,0.05);
 }
+.nb-stats-dot { width: 8px; height: 8px; background: #2D4F1E; border-radius: 50%; animation: pulse 2s infinite; }
+@keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.2); } 100% { opacity: 1; transform: scale(1); } }
 
-.pagination .page-link:hover {
-  color: #20451F;
+.btn-refresh {
+    display: flex; align-items: center; justify-content: center;
+    background: white; border: 1.5px solid #e0e6ed; border-radius: 10px;
+    padding: 8px 16px; font-size: 0.85rem; font-weight: 600; color: #666;
+    cursor: pointer; transition: all 0.2s;
+}
+.btn-refresh:hover { border-color: #2D4F1E; color: #2D4F1E; }
+
+.nb-loading { display: flex; justify-content: center; padding: 60px; }
+.nb-spinner { width: 40px; height: 40px; border: 3px solid #f0f0f0; border-top-color: #2D4F1E; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.nb-empty { text-align: center; padding: 80px 20px; background: white; border-radius: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.05); }
+.nb-empty-icon { color: #2D4F1E; margin-bottom: 16px; opacity: 0.3; display: flex; justify-content: center; }
+.nb-empty h3 { color: #1a1a2e; font-weight: 700; margin-bottom: 8px; }
+.nb-empty p { color: #888; }
+
+.nb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+
+.nb-card {
+    background: white; border-radius: 20px; border: 1.5px solid transparent;
+    padding: 20px; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+    display: flex; flex-direction: column;
+}
+.nb-card:hover { transform: translateY(-5px); border-color: #2D4F1E; box-shadow: 0 12px 24px rgba(45,79,30,0.12); }
+
+.nb-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.nb-id { font-weight: 800; color: #ddd; font-size: 1.2rem; }
+.nb-badge { background: #fff8e6; color: #b38600; font-size: 0.7rem; font-weight: 700; padding: 4px 10px; border-radius: 100px; }
+
+.nb-name { font-weight: 700; color: #1a1a2e; margin: 0 0 10px; font-size: 1.1rem; }
+.nb-package { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+.nb-pkg-tag { background: #2D4F1E; color: white; font-size: 0.7rem; font-weight: 700; padding: 3px 10px; border-radius: 6px; }
+.nb-pkg-cat { font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
+
+.nb-meta { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.nb-meta-item { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #666; }
+.nb-meta-item--highlight { color: #2D4F1E; background: rgba(45,79,30,0.06); padding: 4px 10px; border-radius: 8px; margin-top: 4px; }
+
+.nb-card-footer {
+    margin-top: 16px; padding-top: 16px; border-top: 1px solid #f5f5f5;
+    display: flex; justify-content: space-between; align-items: center;
+}
+.nb-payment { font-size: 0.8rem; color: #888; font-weight: 600; }
+.nb-price { font-weight: 800; color: #1a1a2e; font-size: 1rem; }
+
+.nb-pagination { display: flex; justify-content: center; gap: 8px; margin-top: 40px; }
+.nb-page-btn {
+    width: 38px; height: 38px; border-radius: 10px; border: 1px solid #e0e6ed;
+    background: white; cursor: pointer; font-weight: 700; color: #666; transition: all 0.2s;
+    display: flex; align-items: center; justify-content: center;
+}
+.nb-page-btn:hover:not(:disabled) { border-color: #2D4F1E; color: #2D4F1E; background: #f0f4f0; }
+.nb-page-btn.active { background: #2D4F1E; color: white; border-color: #2D4F1E; }
+.nb-page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Modal */
+.nb-modal { border-radius: 24px; overflow: hidden; border: none; }
+.nb-modal-header { background: #2D4F1E; color: white; padding: 20px 28px; border: none; }
+.nb-modal-body { padding: 28px; background: #fcfdfc; }
+.nb-modal-footer { padding: 20px 28px; border: none; background: white; }
+
+.nb-detail-box { background: white; padding: 20px; border-radius: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+.nb-detail-box label { display: block; font-size: 0.75rem; font-weight: 700; color: #888; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.05em; }
+
+.nb-val-main { font-size: 1.3rem; font-weight: 800; color: #1a1a2e; margin-bottom: 4px; }
+.nb-val-sub { font-size: 0.9rem; color: #666; font-weight: 500; display: flex; align-items: center; }
+.nb-val-info { margin: 8px 0; color: #2D4F1E; font-size: 1rem; }
+.nb-val-address { font-size: 0.85rem; color: #555; background: #f8fafb; padding: 10px; border-radius: 8px; display: flex; align-items: center; }
+.nb-val-note { font-size: 0.85rem; color: #b38600; background: #fffdf5; padding: 10px; border-radius: 8px; }
+
+.nb-extras-list { display: flex; flex-direction: column; gap: 8px; }
+.nb-extra-item { display: flex; justify-content: space-between; padding: 10px 14px; background: #f8fafb; border-radius: 10px; font-size: 0.9rem; font-weight: 600; }
+.nb-extra-qty { color: #2D4F1E; }
+.nb-empty-small { color: #aaa; font-style: italic; font-size: 0.85rem; }
+
+.nb-proof-wrap { margin-top: 10px; background: #f0f0f0; border-radius: 12px; overflow: hidden; }
+.nb-proof-wrap img { width: 100%; transition: transform 0.3s; cursor: zoom-in; }
+.nb-proof-wrap img:hover { transform: scale(1.05); }
+
+@media (max-width: 600px) {
+    .nb-grid { grid-template-columns: 1fr; }
+    .nb-modal-body { padding: 16px; }
 }
 </style>

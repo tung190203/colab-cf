@@ -89,11 +89,7 @@ class BookingController extends Controller
         }
 
         // Xác định status ban đầu
-        $status = match ($validated['payment_method']) {
-            'cash' => 'confirmed',
-            'momo', 'transfer' => 'pending',
-            default => 'pending',
-        };
+        $status = 'pending'; // Tất cả đơn ban đầu đều là pending chờ thanh toán/xác nhận
 
         // Tạo booking
         DB::beginTransaction();
@@ -193,8 +189,9 @@ class BookingController extends Controller
     public function extras()
     {
         $categories = ['services'];
-        $extras = Extra::select('id', 'category', 'name', 'price')
+        $extras = Extra::select('id', 'category', 'name', 'price', 'image', 'tags')
             ->whereNotIn('category', $categories)
+            ->where('status', true)
             ->get()
             ->groupBy('category')
             ->map(function ($items) {
@@ -202,7 +199,9 @@ class BookingController extends Controller
                     return [
                         'id' => $item->id,
                         'name' => $item->name,
-                        'price' => $item->price
+                        'price' => $item->price,
+                        'image' => $item->image,
+                        'tags' => $item->tags
                     ];
                 })->values();
             });
@@ -438,8 +437,17 @@ class BookingController extends Controller
     {
         $now = Carbon::now();
 
+        // Staff thấy các đơn:
+        // 1. Đã confirmed (Momo/Chuyển khoản đã duyệt)
+        // 2. Pending nhưng thanh toán bằng Tiền mặt (để staff thu tiền)
         $todayBookings = Booking::with('package', 'table', 'extras')
-            ->where('status', 'confirmed')
+            ->where(function($q) {
+                $q->where('status', 'confirmed')
+                  ->orWhere(function($q2) {
+                      $q2->where('status', 'pending')
+                         ->where('payment_method', 'cash');
+                  });
+            })
             ->where('is_served', false)
             ->whereDate('start_time', $now->toDateString())
             ->get();
@@ -452,6 +460,34 @@ class BookingController extends Controller
         $sorted = $future->merge($past);
 
         return response()->json(['bookings' => $sorted]);
+    }
+
+    public function getAllBookings(Request $request)
+    {
+        $month = $request->query('month', now()->month);
+        $year = $request->query('year', now()->year);
+        $search = $request->query('search', '');
+
+        $query = Booking::with('package', 'table', 'extras')
+            ->whereMonth('start_time', $month)
+            ->whereYear('start_time', $year);
+
+        if (!empty($search)) {
+            $query->where(function ($q) use ($search) {
+                $q->where('full_name', 'like', '%' . $search . '%')
+                  ->orWhere('phone', 'like', '%' . $search . '%');
+                  
+                // Hỗ trợ tìm kiếm theo ID đơn hàng (#ORD-123 hoặc 123)
+                $numericSearch = preg_replace('/[^0-9]/', '', $search);
+                if (!empty($numericSearch)) {
+                    $q->orWhere('id', $numericSearch);
+                }
+            });
+        }
+
+        $bookings = $query->orderByDesc('created_at')->get();
+
+        return response()->json(['bookings' => $bookings]);
     }
 
     public function addMember(Request $request)
@@ -493,6 +529,10 @@ class BookingController extends Controller
         }
 
         $booking->is_served = true;
+        // Nếu là đơn tiền mặt đang chờ thanh toán, chuyển thành confirmed (Hoàn thành)
+        if ($booking->payment_method === 'cash' && $booking->status === 'pending') {
+            $booking->status = 'confirmed';
+        }
         $booking->save();
 
         return response()->json(['message' => 'Đánh dấu là đã phục vụ', 'booking' => $booking]);

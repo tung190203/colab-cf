@@ -8,23 +8,25 @@ import { CheckCircle2, XCircle, Loader2, Clock, LogOut, LogIn, ArrowLeft } from 
 const router = useRouter();
 const { authHeader, isLoggedIn } = useAdminAuth();
 
-const status = ref('loading'); // loading, success, error
-const message = ref('Đang xử lý thông tin check-in...');
+const status = ref('waiting'); // waiting, processing, success, error
+const message = ref('Nhấn nút bên dưới để bắt đầu xác thực vị trí và chấm công.');
 const resultData = ref(null);
 
-onMounted(async () => {
+onMounted(() => {
     if (!isLoggedIn()) {
         router.push(`/admin/login?redirect=${encodeURIComponent(router.currentRoute.value.fullPath)}`);
-        return;
     }
+});
 
-    message.value = 'Đang xác thực vị trí của bạn...';
-    
+async function startCheckIn() {
     if (!navigator.geolocation) {
         status.value = 'error';
         message.value = 'Trình duyệt của bạn không hỗ trợ định vị GPS.';
         return;
     }
+
+    status.value = 'processing';
+    message.value = 'Đang xác thực vị trí của bạn...';
 
     navigator.geolocation.getCurrentPosition(
         async (position) => {
@@ -49,14 +51,14 @@ onMounted(async () => {
         (err) => {
             status.value = 'error';
             if (err.code === 1) {
-                message.value = 'Bạn phải cho phép truy cập vị trí để chấm công.';
+                message.value = 'Bạn phải cho phép truy cập vị trí để chấm công. Vui lòng kiểm tra cài đặt trình duyệt.';
             } else {
-                message.value = 'Không thể xác định vị trí của bạn. Vui lòng thử lại.';
+                message.value = 'Không thể xác định vị trí (Lỗi: ' + err.message + '). Vui lòng thử lại.';
             }
         },
         { enableHighAccuracy: true, timeout: 10000 }
     );
-});
+}
 
 function goBack() {
     router.push('/staff/attendance');
@@ -69,8 +71,20 @@ function goBack() {
         <div class="qrc-bg-right"></div>
 
         <div class="qrc-card">
-            <!-- Loading State -->
-            <div v-if="status === 'loading'" class="qrc-content">
+            <!-- Waiting State -->
+            <div v-if="status === 'waiting'" class="qrc-content">
+                <div class="qrc-icon-wrap is-loading">
+                    <Clock :size="48" />
+                </div>
+                <h2 class="qrc-title">Xác thực</h2>
+                <p class="qrc-message">{{ message }}</p>
+                <button class="qrc-btn" @click="startCheckIn">
+                    Bắt đầu chấm công
+                </button>
+            </div>
+
+            <!-- Processing State -->
+            <div v-if="status === 'processing'" class="qrc-content">
                 <div class="qrc-icon-wrap is-loading">
                     <Loader2 :size="48" class="qrc-spinner" />
                 </div>

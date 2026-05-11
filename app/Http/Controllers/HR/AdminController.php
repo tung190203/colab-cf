@@ -148,7 +148,7 @@ class AdminController extends Controller
 
     public function getStaffList()
     {
-        $staff = User::whereIn('role', ['admin', 'staff'])
+        $staff = User::where('role', 'staff')
             ->get()
             ->map(fn($u) => array_merge($u->toArray(), ['image_url' => $u->image_url]));
 
@@ -285,7 +285,7 @@ class AdminController extends Controller
         $month = $request->query('month', now()->month);
         $year  = $request->query('year', now()->year);
 
-        $staff = User::whereIn('role', ['admin', 'staff'])->get();
+        $staff = User::where('role', 'staff')->get();
 
         $result = $staff->map(function ($u) use ($month, $year) {
             $payroll = Payroll::where('staff_id', $u->id)

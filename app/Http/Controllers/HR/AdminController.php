@@ -255,7 +255,7 @@ class AdminController extends Controller
             'schedules'            => 'required|array',
             'schedules.*.staff_id' => 'required|exists:users,id',
             'schedules.*.date'     => 'required|date',
-            'schedules.*.shift'    => 'required|in:morning,afternoon',
+            'schedules.*.shift'    => 'required|exists:shifts,key',
             'schedules.*.note'     => 'nullable|string',
         ]);
 

@@ -4,8 +4,10 @@ import { toast } from 'vue3-toastify';
 import AdminLayout from './admin/AdminLayout.vue';
 import { Pencil, Trash2, Camera, Plus, Search } from 'lucide-vue-next';
 import { useAdminAuth } from '../composables/useAdminAuth';
+import ConfirmDialog from './ConfirmDialog.vue';
 
 const { adminUser, authHeader } = useAdminAuth();
+const confirmModal = ref({ show: false, id: null });
 const listMember = ref([]);
 const currentPage = ref(1);
 const itemsPerPage = 12;
@@ -67,8 +69,13 @@ function goToPage(page) {
   }
 }
 
-async function deleteMember(id) {
-  if (confirm('Bạn có chắc chắn muốn xóa thành viên này?')) {
+function deleteMember(id) {
+    confirmModal.value = { show: true, id };
+}
+
+async function executeDeleteMember() {
+    const id = confirmModal.value.id;
+    confirmModal.value.show = false;
     try {
         const res = await fetch(`/api/member/${id}`, { 
             method: 'DELETE',
@@ -84,7 +91,6 @@ async function deleteMember(id) {
     } catch (err) {
         toast.error(err.message || 'Xóa thất bại');
     }
-  }
 }
 
 function openEditModal(member) {
@@ -278,6 +284,16 @@ onMounted(getListMember);
             </div>
         </div>
     </Teleport>
+
+    <ConfirmDialog 
+        :show="confirmModal.show"
+        title="Xóa thành viên"
+        message="Bạn có chắc chắn muốn xóa thành viên này? Hành động này không thể hoàn tác."
+        confirmText="Xóa thành viên"
+        type="danger"
+        @confirm="executeDeleteMember"
+        @cancel="confirmModal.show = false"
+    />
   </AdminLayout>
 </template>
 

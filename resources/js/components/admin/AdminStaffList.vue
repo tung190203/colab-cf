@@ -5,6 +5,7 @@ import { Pencil, Trash2, Plus, Search } from 'lucide-vue-next';
 import { useAdminAuth } from '../../composables/useAdminAuth';
 import { toast } from 'vue3-toastify';
 import axios from 'axios';
+import ConfirmDialog from '../ConfirmDialog.vue';
 
 const { adminUser, authHeader } = useAdminAuth();
 const staff = ref([]);
@@ -13,6 +14,7 @@ const showModal = ref(false);
 const editMode = ref(false);
 const submitting = ref(false);
 const searchQuery = ref('');
+const confirmModal = ref({ show: false, id: null });
 
 const form = ref({
     id: null, name: '', phone: '', password: '',
@@ -82,8 +84,13 @@ async function submitForm() {
     }
 }
 
-async function deleteStaff(id) {
-    if (!confirm('Bạn có chắc muốn xóa nhân viên này?')) return;
+function deleteStaff(id) {
+    confirmModal.value = { show: true, id };
+}
+
+async function executeDelete() {
+    const id = confirmModal.value.id;
+    confirmModal.value.show = false;
     try {
         await axios.delete(`/api/admin/staff/${id}`, { headers: authHeader() });
         toast.success('Đã xóa');
@@ -96,8 +103,8 @@ async function deleteStaff(id) {
 const filteredStaff = () => {
     let list = staff.value;
     
-    // Ẩn tài khoản của chính người đang đăng nhập
-    if (adminUser.value?.id) {
+    // Ẩn tài khoản của chính người đang đăng nhập nếu là admin
+    if (adminUser.value?.id && adminUser.value?.role === 'admin') {
         list = list.filter(s => s.id !== adminUser.value.id);
     }
 
@@ -168,13 +175,16 @@ function handleSalaryInput(e) {
                                         <img v-if="s.image_url" :src="s.image_url" :alt="s.name" />
                                         <span v-else>{{ s.name?.charAt(0)?.toUpperCase() }}</span>
                                     </div>
-                                    <span class="sl-staff-name">{{ s.name }}</span>
+                                    <span class="sl-staff-name">
+                                        {{ s.name }}
+                                        <span v-if="s.id === adminUser?.id" style="color: #64748b; font-weight: 500; font-size: 0.85em;">(Tôi)</span>
+                                    </span>
                                 </div>
                             </td>
                             <td class="sl-phone">{{ s.phone }}</td>
                             <td>
                                 <span class="sl-role-badge" :class="s.role">
-                                    {{ s.role === 'admin' ? 'Admin' : 'Nhân viên' }}
+                                    {{ s.role === 'admin' ? 'Admin' : (s.role === 'shift_leader' ? 'Trưởng ca' : 'Nhân viên') }}
                                 </span>
                             </td>
                             <td class="sl-salary">{{ s.hourly_rate > 0 ? new Intl.NumberFormat('vi-VN').format(s.hourly_rate) + ' ₫' : '—' }}</td>
@@ -234,6 +244,7 @@ function handleSalaryInput(e) {
                                 <label>Vai trò <span class="req">*</span></label>
                                 <select v-model="form.role">
                                     <option value="staff">Nhân viên</option>
+                                    <option value="shift_leader">Trưởng ca</option>
                                     <option value="admin">Admin</option>
                                 </select>
                             </div>
@@ -263,6 +274,16 @@ function handleSalaryInput(e) {
                 </div>
             </div>
         </Teleport>
+
+        <ConfirmDialog 
+            :show="confirmModal.show"
+            title="Xóa nhân viên"
+            message="Bạn có chắc muốn xóa nhân viên này? Dữ liệu không thể hoàn tác sau khi xóa."
+            confirmText="Xóa nhân viên"
+            type="danger"
+            @confirm="executeDelete"
+            @cancel="confirmModal.show = false"
+        />
     </AdminLayout>
 </template>
 

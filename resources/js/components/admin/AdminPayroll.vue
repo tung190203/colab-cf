@@ -27,8 +27,8 @@ async function fetchPayroll() {
         const res = await axios.get(`/api/admin/payroll?month=${selectedMonth.value}&year=${selectedYear.value}`, { headers: authHeader() });
         let list = res.data;
         
-        // Ẩn tài khoản của chính người đang đăng nhập
-        if (adminUser.value?.id) {
+        // Ẩn tài khoản của chính người đang đăng nhập nếu là admin
+        if (adminUser.value?.id && adminUser.value?.role === 'admin') {
             list = list.filter(p => p.staff_id !== adminUser.value.id);
         }
         
@@ -204,8 +204,11 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
                                         <span v-else>{{ item.name?.charAt(0)?.toUpperCase() }}</span>
                                     </div>
                                     <div>
-                                        <div class="pr-staff-name">{{ item.name }}</div>
-                                        <div class="pr-staff-role">{{ item.role === 'admin' ? 'Admin' : 'Nhân viên' }}</div>
+                                        <div class="pr-staff-name">
+                                            {{ item.name }}
+                                            <span v-if="item.staff_id === adminUser?.id" style="color: #888; font-weight: 500; font-size: 0.85em;">(Tôi)</span>
+                                        </div>
+                                        <div class="pr-staff-role">{{ item.role === 'admin' ? 'Admin' : (item.role === 'shift_leader' ? 'Trưởng ca' : 'Nhân viên') }}</div>
                                     </div>
                                 </div>
                             </td>

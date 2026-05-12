@@ -145,7 +145,7 @@ const hasShift = (staffId, date, key) => {
 };
 
 const employeesOnly = computed(() => {
-    return staff.value.filter(s => s.role === 'staff');
+    return staff.value.filter(s => s.role === 'staff' || s.role === 'shift_leader');
 });
 </script>
 

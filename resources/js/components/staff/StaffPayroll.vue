@@ -131,7 +131,32 @@ const getDeductionIcon = (label) => {
                             <div class="sp-mc-lbl">Thưởng</div>
                             <div class="sp-mc-v">{{ fmt(payroll.bonus).replace(' ₫', ' VND') }}</div>
                         </div>
+                        <div class="sp-mc-col">
+                            <div class="sp-mc-lbl">Tổng giảm trừ</div>
+                            <div class="sp-mc-v" style="color: #ef4444;">-{{ fmt(payroll.deduction).replace(' ₫', ' VND') }}</div>
+                        </div>
                     </div>
+
+                    <template v-if="payroll.deduction > 0">
+                        <div class="sp-mc-divider"></div>
+                        <h4 style="font-size: 0.95rem; font-weight: 700; margin-bottom: 16px; color: #334155;">Chi tiết khoản giảm trừ</h4>
+                        <div class="sp-ded-list" v-if="payroll.deduction_details && payroll.deduction_details.length > 0">
+                            <div class="sp-ded-item" v-for="(d, i) in payroll.deduction_details" :key="i">
+                                <div class="sp-di-icon"><component :is="getDeductionIcon(d.label)" :size="18"/></div>
+                                <div class="sp-di-info">
+                                    <div class="sp-di-name">{{ d.label }}</div>
+                                </div>
+                                <div class="sp-di-val">-{{ fmt(d.amount).replace(' ₫', ' VND') }}</div>
+                            </div>
+                        </div>
+                        <div v-else class="sp-ded-list">
+                             <div class="sp-ded-item">
+                                <div class="sp-di-icon"><CircleDollarSign :size="18"/></div>
+                                <div class="sp-di-info"><div class="sp-di-name">Khấu trừ khác</div></div>
+                                <div class="sp-di-val">-{{ fmt(payroll.deduction).replace(' ₫', ' VND') }}</div>
+                            </div>
+                        </div>
+                    </template>
                 </div>
 
                 <div class="sp-card sp-chart-card">
@@ -151,9 +176,9 @@ const getDeductionIcon = (label) => {
                 <div class="sp-card sp-history-card">
                     <div class="sp-card-header">
                         <h3 class="sp-card-title">Lịch sử nhận lương</h3>
-                        <a href="#" class="sp-link">Xem tất cả ></a>
                     </div>
-                    <table class="sp-table">
+                    <div class="sp-table-responsive">
+                        <table class="sp-table">
                         <thead>
                             <tr>
                                 <th>Tháng</th>
@@ -175,45 +200,7 @@ const getDeductionIcon = (label) => {
                                 <td colspan="5" class="text-center text-muted py-4">Chưa có lịch sử</td>
                             </tr>
                         </tbody>
-                    </table>
-                </div>
-
-                <div class="sp-card sp-deduction-card">
-                    <h3 class="sp-card-title">Khoản giảm trừ (nếu có)</h3>
-                    
-                    <div class="sp-ded-list" v-if="payroll.deduction_details && payroll.deduction_details.length > 0">
-                        <div class="sp-ded-item" v-for="(d, i) in payroll.deduction_details" :key="i">
-                            <div class="sp-di-icon"><component :is="getDeductionIcon(d.label)" :size="20"/></div>
-                            <div class="sp-di-info">
-                                <div class="sp-di-name">{{ d.label }}</div>
-                            </div>
-                            <div class="sp-di-val">-{{ fmt(d.amount).replace(' ₫', ' VND') }}</div>
-                        </div>
-                    </div>
-                    <div v-else-if="payroll.deduction > 0" class="sp-ded-list">
-                         <div class="sp-ded-item">
-                            <div class="sp-di-icon"><CircleDollarSign :size="20"/></div>
-                            <div class="sp-di-info"><div class="sp-di-name">Khấu trừ khác</div></div>
-                            <div class="sp-di-val">-{{ fmt(payroll.deduction).replace(' ₫', ' VND') }}</div>
-                        </div>
-                    </div>
-                    <div v-else class="sp-no-ded">Không có khoản giảm trừ.</div>
-
-                    <div class="sp-ded-divider"></div>
-
-                    <div class="sp-ded-summary">
-                        <div class="sp-ds-row">
-                            <span class="sp-ds-lbl">Tổng thu nhập gộp</span>
-                            <span class="sp-ds-val">{{ fmt(Number(payroll.calculated_salary) + Number(payroll.bonus)).replace(' ₫', ' VND') }}</span>
-                        </div>
-                        <div class="sp-ds-row sp-text-red">
-                            <span class="sp-ds-lbl">Tổng giảm trừ</span>
-                            <span class="sp-ds-val">-{{ fmt(payroll.deduction).replace(' ₫', ' VND') }}</span>
-                        </div>
-                        <div class="sp-ds-row sp-ds-final">
-                            <span class="sp-ds-lbl">Thực nhận</span>
-                            <span class="sp-ds-val">{{ fmt(total).replace(' ₫', ' VND') }}</span>
-                        </div>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -264,6 +251,7 @@ const getDeductionIcon = (label) => {
     padding: 28px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.02);
     border: 1px solid #f8fafc;
+    min-width: 0;
 }
 .sp-card-title {
     font-size: 1.1rem; font-weight: 700; color: #334155; margin-bottom: 20px;
@@ -272,7 +260,6 @@ const getDeductionIcon = (label) => {
     display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;
 }
 .sp-card-header .sp-card-title { margin-bottom: 0; }
-.sp-link { color: #1e3a1f; text-decoration: none; font-size: 0.9rem; font-weight: 600; }
 
 /* Main Card */
 .sp-main-card {
@@ -315,10 +302,11 @@ const getDeductionIcon = (label) => {
 .c-bonus { background: #86efac; }
 
 /* History Card */
-.sp-history-card { grid-column: 1; }
+.sp-history-card { grid-column: 1 / -1; }
+.sp-table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .sp-table { width: 100%; border-collapse: collapse; }
-.sp-table th { text-align: left; padding: 16px; font-size: 0.85rem; color: #64748b; font-weight: 700; border-bottom: 2px solid #f1f5f9; background: #fafbfc; }
-.sp-table td { padding: 18px 16px; border-bottom: 1px solid #f1f5f9; font-size: 0.95rem; vertical-align: middle; }
+.sp-table th { text-align: left; padding: 16px; font-size: 0.85rem; color: #64748b; font-weight: 700; border-bottom: 2px solid #f1f5f9; background: #fafbfc; white-space: nowrap; }
+.sp-table td { padding: 18px 16px; border-bottom: 1px solid #f1f5f9; font-size: 0.95rem; vertical-align: middle; white-space: nowrap; }
 .sp-table tr:hover td { background: #fafbfc; }
 .sp-status-done { display: inline-flex; align-items: center; gap: 6px; background: #f0fdf4; color: #16a34a; padding: 6px 12px; border-radius: 100px; font-size: 0.8rem; font-weight: 600; }
 .sp-status-draft { display: inline-flex; align-items: center; gap: 6px; background: #eff6ff; color: #3b82f6; padding: 6px 12px; border-radius: 100px; font-size: 0.8rem; font-weight: 600; }

@@ -13,7 +13,7 @@ import {
     CheckCircle2
 } from 'lucide-vue-next';
 
-const { adminUser, authHeader, isAdmin } = useAdminAuth();
+const { adminUser, authHeader, isAdmin, isShiftLeader } = useAdminAuth();
 const stats = ref({
     total_staff: 0,
     active_schedules: 0,
@@ -79,7 +79,7 @@ const greeting = computed(() => {
 
             <!-- Stats cards -->
             <div class="db-cards">
-                <template v-if="isAdmin()">
+                <template v-if="isAdmin() || isShiftLeader()">
                     <div class="db-card db-card--green">
                         <div class="db-card-icon"><Users :size="24" /></div>
                         <div class="db-card-info">
@@ -129,7 +129,7 @@ const greeting = computed(() => {
             </div>
 
             <!-- Content Grid -->
-            <div class="db-grid" v-if="isAdmin()">
+            <div class="db-grid" v-if="isAdmin() || isShiftLeader()">
                 <!-- Revenue Chart -->
                 <div class="db-section-card">
                     <div class="db-sc-header">
@@ -212,7 +212,7 @@ const greeting = computed(() => {
             <div class="db-section mt-5">
                 <h4 class="db-section-title">Thao tác nhanh</h4>
                 <div class="db-actions">
-                    <template v-if="isAdmin()">
+                    <template v-if="isAdmin() || isShiftLeader()">
                         <router-link to="/admin/staff" class="db-action-btn">
                             <div class="db-ab-icon"><Users :size="20"/></div>
                             <span>Quản lý nhân sự</span>
@@ -235,7 +235,7 @@ const greeting = computed(() => {
                             <span>Chấm công hôm nay</span>
                             <ArrowRight :size="18" />
                         </router-link>
-                        <router-link to="/staff/schedule" class="db-action-btn">
+                        <router-link v-if="!isShiftLeader()" to="/staff/schedule" class="db-action-btn">
                             <div class="db-ab-icon"><Clock :size="20"/></div>
                             <span>Lịch làm việc của tôi</span>
                             <ArrowRight :size="18" />
@@ -243,6 +243,11 @@ const greeting = computed(() => {
                         <router-link to="/admin/orders" class="db-action-btn">
                             <div class="db-ab-icon"><ClipboardList :size="20"/></div>
                             <span>Xử lý đơn hàng</span>
+                            <ArrowRight :size="18" />
+                        </router-link>
+                        <router-link v-if="isShiftLeader()" to="/admin/schedule" class="db-action-btn">
+                            <div class="db-ab-icon"><Clock :size="20"/></div>
+                            <span>Phân lịch làm việc</span>
                             <ArrowRight :size="18" />
                         </router-link>
                     </template>

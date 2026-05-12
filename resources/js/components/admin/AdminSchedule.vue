@@ -5,8 +5,9 @@ import { useAdminAuth } from '../../composables/useAdminAuth';
 import { toast } from 'vue3-toastify';
 import axios from 'axios';
 import { ArrowLeft, ChevronLeft, ChevronRight, Check, X } from 'lucide-vue-next';
+import ConfirmDialog from '../ConfirmDialog.vue';
 
-const { authHeader } = useAdminAuth();
+const { authHeader, adminUser } = useAdminAuth();
 
 // State
 const staff = ref([]);
@@ -18,12 +19,13 @@ const currentMonth = ref(new Date());
 
 // Computed for filtering only staff (exclude admins)
 const employeesOnly = computed(() => {
-    return staff.value.filter(s => s.role === 'staff');
+    return staff.value.filter(s => s.role === 'staff' || s.role === 'shift_leader');
 });
 
 const SHIFTS = ref([]);
 const showSettingModal = ref(false);
 const shiftForms = ref([]);
+const confirmModal = ref({ show: false, idx: null });
 
 async function fetchShifts() {
     try {
@@ -43,6 +45,11 @@ async function fetchShifts() {
 async function saveShiftSettings() {
     saving.value = true;
     try {
+        // Ensure keys exist
+        shiftForms.value.forEach((s, idx) => {
+            if (!s.key) s.key = 'shift_' + Date.now() + '_' + idx;
+        });
+
         await axios.post('/api/admin/shifts', { shifts: shiftForms.value }, { headers: authHeader() });
         toast.success('Đã cập nhật ca làm');
         await fetchShifts();
@@ -52,6 +59,25 @@ async function saveShiftSettings() {
     } finally {
         saving.value = false;
     }
+}
+
+function addShift() {
+    shiftForms.value.push({
+        key: '',
+        name: 'Ca mới',
+        start_time: '08:00',
+        end_time: '12:00',
+        color: '#3b82f6'
+    });
+}
+
+function removeShift(idx) {
+    confirmModal.value = { show: true, idx };
+}
+
+function executeRemoveShift() {
+    shiftForms.value.splice(confirmModal.value.idx, 1);
+    confirmModal.value.show = false;
 }
 
 // Calendar Logic
@@ -323,7 +349,10 @@ const hasShift = (staffId, date, key) => {
                                                 <span v-else>{{ s.name?.charAt(0)?.toUpperCase() }}</span>
                                             </div>
                                             <div class="sri-info">
-                                                <span class="sri-name">{{ s.name }}</span>
+                                                <span class="sri-name">
+                                                    {{ s.name }}
+                                                    <span v-if="s.id === adminUser?.id" style="color: #64748b; font-weight: 500; font-size: 0.85em;">(Tôi)</span>
+                                                </span>
                                                 <span class="sri-status">{{ hasShift(s.id, modalDate, shift.key) ? 'Đang chọn' : 'Chưa chọn' }}</span>
                                             </div>
                                             <div class="sri-toggle">
@@ -359,32 +388,46 @@ const hasShift = (staffId, date, key) => {
                         </div>
                         <div class="modal-body">
                             <div class="shift-settings-grid">
-                                <div v-for="(form, idx) in shiftForms" :key="form.key" class="shift-setting-card">
-                                    <div class="setting-card-header" :style="{ borderLeftColor: form.color }">
-                                        <h4>{{ form.key === 'morning' ? 'Ca Sáng' : 'Ca Chiều' }}</h4>
+                                <div v-for="(form, idx) in shiftForms" :key="idx" class="shift-setting-card">
+                                    <div class="setting-card-header">
+                                        <div class="sch-left">
+                                            <span class="sch-color-dot" :style="{ backgroundColor: form.color || '#e2e8f0' }"></span>
+                                            <h4>{{ form.name || 'Ca làm mới' }}</h4>
+                                        </div>
+                                        <button class="btn-remove-shift" @click="removeShift(idx)" title="Xóa ca">
+                                            <X :size="16" />
+                                        </button>
                                     </div>
                                     <div class="setting-fields">
-                                        <div class="field">
-                                            <label>Tên hiển thị</label>
-                                            <input v-model="form.name" type="text" />
+                                        <div class="field-group">
+                                            <label>Tên ca</label>
+                                            <input v-model="form.name" type="text" placeholder="Ví dụ: Ca sáng" />
                                         </div>
                                         <div class="field-row">
-                                            <div class="field">
+                                            <div class="field-group">
                                                 <label>Bắt đầu</label>
-                                                <input v-model="form.start_time" type="time" />
+                                                <div class="time-input-wrap">
+                                                    <input v-model="form.start_time" type="time" />
+                                                </div>
                                             </div>
-                                            <div class="field">
+                                            <div class="field-group">
                                                 <label>Kết thúc</label>
-                                                <input v-model="form.end_time" type="time" />
+                                                <div class="time-input-wrap">
+                                                    <input v-model="form.end_time" type="time" />
+                                                </div>
                                             </div>
                                         </div>
-                                        <div class="field">
-                                            <label>Màu sắc</label>
-                                            <input v-model="form.color" type="color" />
+                                        <div class="field-group">
+                                            <label>Màu sắc nhận diện</label>
+                                            <div class="color-picker-wrap">
+                                                <input v-model="form.color" type="color" class="color-input" />
+                                                <span class="color-hex">{{ form.color }}</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
+                            <button class="btn-add-shift" @click="addShift">+ Thêm ca làm mới</button>
                         </div>
                         <div class="modal-footer">
                             <button class="btn-cancel" @click="showSettingModal = false">Hủy</button>
@@ -397,6 +440,16 @@ const hasShift = (staffId, date, key) => {
                 </div>
             </Transition>
         </Teleport>
+
+        <ConfirmDialog 
+            :show="confirmModal.show"
+            title="Xóa ca làm"
+            message="Bạn có chắc muốn xóa ca làm này? Hành động này sẽ thay đổi cấu trúc lịch của bạn."
+            confirmText="Xóa ca"
+            type="danger"
+            @confirm="executeRemoveShift"
+            @cancel="confirmModal.show = false"
+        />
     </AdminLayout>
 </template>
 
@@ -591,6 +644,10 @@ const hasShift = (staffId, date, key) => {
         height: 100%;
         max-height: 100vh;
         border-radius: 0;
+    }
+    
+    .shift-settings-grid {
+        grid-template-columns: 1fr;
     }
 }
 
@@ -807,65 +864,123 @@ const hasShift = (staffId, date, key) => {
 /* Settings Modal */
 .shift-settings-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    grid-template-columns: repeat(2, 1fr);
     gap: 16px;
 }
 
 .shift-setting-card {
-    background: #f8fafc;
-    border-radius: 16px;
-    padding: 20px;
+    background: white;
+    border-radius: 20px;
+    padding: 24px;
     border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    transition: all 0.2s;
+}
+
+.shift-setting-card:hover {
+    border-color: #cbd5e1;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
 }
 
 .setting-card-header {
-    border-left: 4px solid #ccc;
-    padding-left: 12px;
-    margin-bottom: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px dashed #e2e8f0;
+}
+
+.sch-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.sch-color-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px white, 0 0 0 4px #e2e8f0;
 }
 
 .setting-card-header h4 {
     margin: 0;
-    font-size: 1rem;
+    font-size: 1.1rem;
     font-weight: 800;
     color: #1e293b;
 }
 
-.setting-fields {
+.field-group {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.field-group label {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #64748b;
+}
+
+.field-group input[type="text"],
+.time-input-wrap input {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1.5px solid #e2e8f0;
+    font-size: 0.95rem;
+    color: #1e293b;
+    outline: none;
+    transition: all 0.2s;
+    background: #f8fafc;
+    font-family: 'Inter', sans-serif;
+    box-sizing: border-box;
+}
+
+.field-group input:focus {
+    border-color: #2D4F1E;
+    background: white;
 }
 
 .field-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 12px;
+    gap: 16px;
 }
 
-.field {
+.color-picker-wrap {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 12px;
+    border-radius: 12px;
+    border: 1.5px solid #e2e8f0;
+    background: #f8fafc;
 }
 
-.field label {
-    font-size: 0.75rem;
-    font-weight: 700;
-    color: #64748b;
-}
-
-.field input {
-    padding: 8px 12px;
-    border: 1px solid #e2e8f0;
+.color-input {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    width: 32px;
+    height: 32px;
+    border: none;
     border-radius: 8px;
-    font-size: 0.9rem;
-    outline: none;
+    cursor: pointer;
+    padding: 0;
+    background: transparent;
 }
+.color-input::-webkit-color-swatch-wrapper { padding: 0; }
+.color-input::-webkit-color-swatch { border: none; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+.color-input::-moz-color-swatch { border: none; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
 
-.field input[type="color"] {
-    padding: 2px;
-    height: 38px;
+.color-hex {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #475569;
+    text-transform: uppercase;
 }
 
 .btn-cancel {
@@ -940,6 +1055,42 @@ const hasShift = (staffId, date, key) => {
     .day-management-layout {
         grid-template-columns: 1fr;
     }
+}
+
+.btn-remove-shift {
+    background: #fee2e2;
+    color: #ef4444;
+    border: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: 0.2s;
+}
+.btn-remove-shift:hover {
+    background: #fca5a5;
+    color: #b91c1c;
+}
+
+.btn-add-shift {
+    width: 100%;
+    padding: 12px;
+    margin-top: 16px;
+    background: #f8fafc;
+    border: 2px dashed #cbd5e1;
+    color: #475569;
+    border-radius: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.btn-add-shift:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+    color: #1e293b;
 }
 
 </style>

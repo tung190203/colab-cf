@@ -25,7 +25,7 @@ class AdminController extends Controller
         ]);
 
         $user = User::where('phone', $request->phone)
-            ->whereIn('role', ['admin', 'staff'])
+            ->whereIn('role', ['admin', 'staff', 'shift_leader'])
             ->first();
 
         if (!$user || !Hash::check($request->password, $user->password)) {
@@ -66,7 +66,7 @@ class AdminController extends Controller
         $user = auth()->user();
 
         $workedHoursThisMonth = 0;
-        if ($user && $user->role === 'staff') {
+        if ($user && in_array($user->role, ['staff', 'shift_leader'])) {
             $attendances = Attendance::where('staff_id', $user->id)
                 ->whereMonth('date', $today->month)
                 ->whereYear('date', $today->year)
@@ -80,7 +80,7 @@ class AdminController extends Controller
             }
         }
 
-        $totalStaff = User::where('role', 'staff')->count();
+        $totalStaff = User::whereIn('role', ['staff', 'shift_leader'])->count();
         $activeSchedules = StaffSchedule::where('date', $today->toDateString())->count();
         
         // Đơn hàng hôm nay (confirmed)
@@ -148,7 +148,7 @@ class AdminController extends Controller
 
     public function getStaffList()
     {
-        $staff = User::where('role', 'staff')
+        $staff = User::whereIn('role', ['staff', 'shift_leader'])
             ->get()
             ->map(fn($u) => array_merge($u->toArray(), ['image_url' => $u->image_url]));
 
@@ -161,7 +161,7 @@ class AdminController extends Controller
             'name'        => 'required|string|max:255',
             'phone'       => 'required|string|max:15|unique:users,phone',
             'password'    => 'required|string|min:6',
-            'role'        => 'required|in:admin,staff',
+            'role'        => 'required|in:admin,staff,shift_leader',
             'hourly_rate' => 'nullable|integer|min:0',
             'note'        => 'nullable|string',
             'image'       => 'nullable|image|max:2048',
@@ -196,7 +196,7 @@ class AdminController extends Controller
             'name'        => 'required|string|max:255',
             'phone'       => 'required|string|max:15|unique:users,phone,' . $id,
             'password'    => 'nullable|string|min:6',
-            'role'        => 'required|in:admin,staff',
+            'role'        => 'required|in:admin,staff,shift_leader',
             'hourly_rate' => 'nullable|integer|min:0',
             'note'        => 'nullable|string',
             'image'       => 'nullable|image|max:2048',
@@ -285,7 +285,7 @@ class AdminController extends Controller
         $month = $request->query('month', now()->month);
         $year  = $request->query('year', now()->year);
 
-        $staff = User::where('role', 'staff')->get();
+        $staff = User::whereIn('role', ['staff', 'shift_leader'])->get();
 
         $result = $staff->map(function ($u) use ($month, $year) {
             $payroll = Payroll::where('staff_id', $u->id)
@@ -379,13 +379,19 @@ class AdminController extends Controller
             'shifts.*.color'      => 'nullable|string',
         ]);
 
+        $keys = collect($request->shifts)->pluck('key')->toArray();
+        Shift::whereNotIn('key', $keys)->delete();
+
         foreach ($request->shifts as $item) {
-            Shift::where('key', $item['key'])->update([
-                'name'       => $item['name'],
-                'start_time' => $item['start_time'],
-                'end_time'   => $item['end_time'],
-                'color'      => $item['color'] ?? null,
-            ]);
+            Shift::updateOrCreate(
+                ['key' => $item['key']],
+                [
+                    'name'       => $item['name'],
+                    'start_time' => $item['start_time'],
+                    'end_time'   => $item['end_time'],
+                    'color'      => $item['color'] ?? '#2D4F1E',
+                ]
+            );
         }
 
         return response()->json(['message' => 'Cập nhật ca làm thành công', 'shifts' => Shift::all()]);

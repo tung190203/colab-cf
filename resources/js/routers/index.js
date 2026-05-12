@@ -40,23 +40,23 @@ const routes = [
 
   // ─── Admin only routes ───────────────────────────────────────────────────────
   { path: '/admin', redirect: '/admin/dashboard' },
-  { path: '/admin/dashboard', component: AdminDashboard, name: 'AdminDashboard', meta: { requiresAuth: true, roles: ['admin'] } },
-  { path: '/admin/staff', component: AdminStaffList, name: 'AdminStaffList', meta: { requiresAuth: true, roles: ['admin'] } },
-  { path: '/admin/schedule', component: AdminSchedule, name: 'AdminSchedule', meta: { requiresAuth: true, roles: ['admin'] } },
-  { path: '/admin/payroll', component: AdminPayroll, name: 'AdminPayroll', meta: { requiresAuth: true, roles: ['admin'] } },
-  { path: '/admin/menu', component: AdminMenu, name: 'AdminMenu', meta: { requiresAuth: true, roles: ['admin'] } },
+  { path: '/admin/dashboard', component: AdminDashboard, name: 'AdminDashboard', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
+  { path: '/admin/staff', component: AdminStaffList, name: 'AdminStaffList', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
+  { path: '/admin/schedule', component: AdminSchedule, name: 'AdminSchedule', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
+  { path: '/admin/payroll', component: AdminPayroll, name: 'AdminPayroll', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
+  { path: '/admin/menu', component: AdminMenu, name: 'AdminMenu', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
 
   // ─── Shared admin+staff routes ───────────────────────────────────────────────
   { path: '/staff', redirect: '/staff/dashboard' },
-  { path: '/staff/dashboard', component: AdminDashboard, name: 'StaffDashboard', meta: { requiresAuth: true, roles: ['admin', 'staff'] } },
-  { path: '/staff/attendance', component: StaffAttendance, name: 'StaffAttendance', meta: { requiresAuth: true, roles: ['staff'] } },
-  { path: '/staff/schedule', component: StaffSchedule, name: 'StaffSchedule', meta: { requiresAuth: true, roles: ['admin', 'staff'] } },
-  { path: '/staff/payroll', component: StaffPayroll, name: 'StaffPayroll', meta: { requiresAuth: true, roles: ['admin', 'staff'] } },
-  { path: '/checkin', component: QRCheckIn, name: 'QRCheckIn', meta: { requiresAuth: true, roles: ['staff'] } },
+  { path: '/staff/dashboard', component: AdminDashboard, name: 'StaffDashboard', meta: { requiresAuth: true, roles: ['admin', 'staff', 'shift_leader'] } },
+  { path: '/staff/attendance', component: StaffAttendance, name: 'StaffAttendance', meta: { requiresAuth: true, roles: ['staff', 'shift_leader'] } },
+  { path: '/staff/schedule', component: StaffSchedule, name: 'StaffSchedule', meta: { requiresAuth: true, roles: ['admin', 'staff', 'shift_leader'] } },
+  { path: '/staff/payroll', component: StaffPayroll, name: 'StaffPayroll', meta: { requiresAuth: true, roles: ['admin', 'staff', 'shift_leader'] } },
+  { path: '/checkin', component: QRCheckIn, name: 'QRCheckIn', meta: { requiresAuth: true, roles: ['staff', 'shift_leader'] } },
 
   // ─── Orders (Admin/Staff) ──────────────────────────────────────────────────
   { path: '/admin/orders', component: AdminOrders, name: 'AdminOrders', meta: { requiresAuth: true, roles: ['admin'] } },
-  { path: '/staff/orders', component: NewBookings, name: 'NewBookings', meta: { requiresAuth: true, roles: ['staff'] } },
+  { path: '/staff/orders', component: NewBookings, name: 'NewBookings', meta: { requiresAuth: true, roles: ['staff', 'shift_leader'] } },
 
   // ─── Members (Admin Only) ───────────────────────────────────────────────────
   { path: '/admin/members/list', component: ListMember, name: 'ListMember', meta: { requiresAuth: true, roles: ['admin'] } },

@@ -57,18 +57,19 @@ const closeMobileMenu = () => {
 
 const router = useRouter();
 const route = useRoute();
-const { adminUser, logout, isAdmin } = useAdminAuth();
+const { adminUser, logout, isAdmin, isShiftLeader } = useAdminAuth();
 
 const navItems = computed(() => {
     const items = [
-        { label: 'Tổng quan', icon: LayoutDashboard, to: isAdmin() ? '/admin/dashboard' : '/staff/dashboard', roles: ['admin', 'staff'] },
-        { label: 'Quản lý đơn hàng', icon: ClipboardList, to: isAdmin() ? '/admin/orders' : '/staff/orders', roles: ['admin', 'staff'] },
+        { label: 'Tổng quan', icon: LayoutDashboard, to: isAdmin() || isShiftLeader() ? '/admin/dashboard' : '/staff/dashboard', roles: ['admin', 'staff', 'shift_leader'] },
+        { label: 'Quản lý đơn hàng', icon: ClipboardList, to: isAdmin() ? '/admin/orders' : '/staff/orders', roles: ['admin', 'staff', 'shift_leader'] },
         { label: 'Quản lý thành viên', icon: UserCircle, to: '/admin/members/list', roles: ['admin'] },
-        { label: 'Quản lý nhân viên', icon: Users, to: '/admin/staff', roles: ['admin'] },
-        { label: 'Quản lý Menu', icon: Coffee, to: '/admin/menu', roles: ['admin'] },
-        { label: 'Quản lý lịch làm', icon: CalendarDays, to: '/admin/schedule', roles: ['admin'] },
-        { label: 'Bảng lương', icon: CircleDollarSign, to: isAdmin() ? '/admin/payroll' : '/staff/payroll', roles: ['admin', 'staff'] },
-        { label: 'Chấm công', icon: CheckCircle2, to: '/staff/attendance', roles: ['staff'] },
+        { label: 'Quản lý nhân viên', icon: Users, to: '/admin/staff', roles: ['admin', 'shift_leader'] },
+        { label: 'Quản lý Menu', icon: Coffee, to: '/admin/menu', roles: ['admin', 'shift_leader'] },
+        { label: 'Quản lý lịch làm', icon: CalendarDays, to: '/admin/schedule', roles: ['admin', 'shift_leader'] },
+        { label: 'Bảng lương NV', icon: CircleDollarSign, to: '/admin/payroll', roles: ['admin', 'shift_leader'] },
+        { label: 'Lương của tôi', icon: CircleDollarSign, to: '/staff/payroll', roles: ['staff', 'shift_leader'] },
+        { label: 'Chấm công', icon: CheckCircle2, to: '/staff/attendance', roles: ['staff', 'shift_leader'] },
         { label: 'Lịch làm', icon: Clock, to: '/staff/schedule', roles: ['staff'] },
     ];
     return items.filter(i => i.roles.includes(adminUser.value?.role));

@@ -34,19 +34,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/admin/me', [AdminController::class, 'me']);
     Route::get('/admin/stats', [AdminController::class, 'getStats']);
 
-    // Admin only
-    Route::middleware('role:admin')->group(function () {
+    // Admin & Shift Leader
+    Route::middleware('role:admin,shift_leader')->group(function () {
+        Route::post('/admin/shifts', [AdminController::class, 'saveShifts']);
         Route::post('/admin/staff', [AdminController::class, 'addStaff']);
         Route::put('/admin/staff/{id}', [AdminController::class, 'updateStaff']);
         Route::delete('/admin/staff/{id}', [AdminController::class, 'deleteStaff']);
 
-        Route::post('/admin/schedule', [AdminController::class, 'saveSchedule']);
-        Route::delete('/admin/schedule/{id}', [AdminController::class, 'deleteSchedule']);
-
         Route::get('/admin/payroll', [AdminController::class, 'getPayroll']);
         Route::post('/admin/payroll', [AdminController::class, 'savePayroll']);
-
-        Route::post('/admin/shifts', [AdminController::class, 'saveShifts']);
 
         // Menu Management
         Route::get('/admin/menu', [MenuController::class, 'index']);
@@ -54,6 +50,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/admin/menu/upload-image', [MenuController::class, 'uploadImage']);
         Route::put('/admin/menu/{id}', [MenuController::class, 'update']);
         Route::delete('/admin/menu/{id}', [MenuController::class, 'destroy']);
+
+        Route::post('/admin/schedule', [AdminController::class, 'saveSchedule']);
+        Route::delete('/admin/schedule/{id}', [AdminController::class, 'deleteSchedule']);
     });
 
     // Staff & Admin

@@ -34,6 +34,10 @@ export function useAdminAuth() {
         return adminUser.value?.role === 'staff';
     }
 
+    function isShiftLeader() {
+        return adminUser.value?.role === 'shift_leader';
+    }
+
     function isLoggedIn() {
         return !!adminToken.value;
     }
@@ -42,5 +46,5 @@ export function useAdminAuth() {
         return adminToken.value ? { Authorization: `Bearer ${adminToken.value}` } : {};
     }
 
-    return { adminUser, adminToken, login, logout, isAdmin, isStaff, isLoggedIn, authHeader };
+    return { adminUser, adminToken, login, logout, isAdmin, isStaff, isShiftLeader, isLoggedIn, authHeader };
 }

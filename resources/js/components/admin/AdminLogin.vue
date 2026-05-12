@@ -27,7 +27,7 @@ async function handleLogin() {
         setTimeout(() => {
             if (redirectPath) {
                 router.push(redirectPath);
-            } else if (data.user.role === 'admin') {
+            } else if (data.user.role === 'admin' || data.user.role === 'shift_leader') {
                 router.push('/admin/dashboard');
             } else {
                 router.push('/staff/dashboard');

@@ -15,10 +15,21 @@ class StaffController extends Controller
 
     public function checkIn(Request $request)
     {
-        $request->validate(['shift' => 'required|string']);
+        $request->validate([
+            'shift' => 'required|string',
+            'lat' => 'nullable|numeric',
+            'lng' => 'nullable|numeric',
+        ]);
+
         $user = $request->user();
         $today = Carbon::today()->toDateString();
         $shiftKey = $request->shift;
+
+        // GPS Check
+        $locationError = $this->verifyLocation($request->lat, $request->lng);
+        if ($locationError) {
+            return response()->json(['message' => $locationError], 422);
+        }
 
         // 1. Kiểm tra có được phân ca không
         $schedule = StaffSchedule::where('staff_id', $user->id)
@@ -63,10 +74,21 @@ class StaffController extends Controller
 
     public function checkOut(Request $request)
     {
-        $request->validate(['shift' => 'required|string']);
+        $request->validate([
+            'shift' => 'required|string',
+            'lat' => 'nullable|numeric',
+            'lng' => 'nullable|numeric',
+        ]);
+
         $user = $request->user();
         $today = Carbon::today()->toDateString();
         $shiftKey = $request->shift;
+
+        // GPS Check
+        $locationError = $this->verifyLocation($request->lat, $request->lng);
+        if ($locationError) {
+            return response()->json(['message' => $locationError], 422);
+        }
 
         $attendance = Attendance::where('staff_id', $user->id)
             ->where('date', $today)
@@ -216,30 +238,36 @@ class StaffController extends Controller
         return $angle * $earthRadius;
     }
 
+    private function verifyLocation($lat, $lng)
+    {
+        // Tọa độ quán (Ví dụ: Tòa nhà Landmark 81)
+        // Bạn hãy thay thế bằng tọa độ thực tế của quán bạn
+        $shopLat = 21.03558768528232;
+        $shopLng = 105.81652468074789;
+
+        if (!$lat || !$lng) {
+            return 'Bạn cần cho phép truy cập vị trí để chấm công.';
+        }
+
+        $distance = $this->calculateDistance($lat, $lng, $shopLat, $shopLng);
+        if ($distance > 150) { // Giới hạn 150 mét cho sai số GPS
+            return 'Bạn đang ở quá xa quán để có thể chấm công (Cách ' . round($distance) . 'm).';
+        }
+
+        return null;
+    }
+
     public function smartCheckIn(Request $request)
     {
         $user = $request->user();
         $today = Carbon::today()->toDateString();
         $now = now();
 
-        // --- GPS CHECK (Bổ sung) ---
-        $lat = $request->lat;
-        $lng = $request->lng;
-
-        // Tọa độ quán (Ví dụ: Tòa nhà Landmark 81)
-        // Bạn hãy thay thế bằng tọa độ thực tế của quán bạn
-        $shopLat = 21.03558768528232; 
-        $shopLng = 105.81652468074789;
-
-        if (!$lat || !$lng) {
-            return response()->json(['message' => 'Bạn cần cho phép truy cập vị trí để chấm công.'], 422);
+        // GPS Check
+        $locationError = $this->verifyLocation($request->lat, $request->lng);
+        if ($locationError) {
+            return response()->json(['message' => $locationError], 422);
         }
-
-        $distance = $this->calculateDistance($lat, $lng, $shopLat, $shopLng);
-        if ($distance > 150) { // Giới hạn 150 mét cho sai số GPS
-            return response()->json(['message' => 'Bạn đang ở quá xa quán để có thể chấm công (Cách ' . round($distance) . 'm).'], 422);
-        }
-        // ---------------------------
 
         // 1. Tìm tất cả các ca được phân hôm nay
         $schedules = StaffSchedule::where('staff_id', $user->id)

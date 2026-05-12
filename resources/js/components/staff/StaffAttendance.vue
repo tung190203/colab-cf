@@ -71,12 +71,18 @@ async function fetchMonthRecords() {
 async function checkIn(shiftKey) {
     checkInLoading.value[shiftKey] = true;
     try {
-        await axios.post('/api/staff/check-in', { shift: shiftKey }, { headers: authHeader() });
+        const coords = await getCurrentLocation();
+        await axios.post('/api/staff/check-in', { 
+            shift: shiftKey,
+            lat: coords.lat,
+            lng: coords.lng
+        }, { headers: authHeader() });
         toast.success(`Check-in ca ${getShiftName(shiftKey)} thành công!`);
         await fetchToday();
         await fetchMonthRecords();
     } catch(e) { 
-        toast.error(e.response?.data?.message || 'Lỗi check-in'); 
+        console.error('Check-in error details:', e);
+        toast.error(getErrorMsg(e, 'Lỗi check-in')); 
     }
     finally { checkInLoading.value[shiftKey] = false; }
 }
@@ -84,12 +90,18 @@ async function checkIn(shiftKey) {
 async function checkOut(shiftKey) {
     checkOutLoading.value[shiftKey] = true;
     try {
-        await axios.post('/api/staff/check-out', { shift: shiftKey }, { headers: authHeader() });
+        const coords = await getCurrentLocation();
+        await axios.post('/api/staff/check-out', { 
+            shift: shiftKey,
+            lat: coords.lat,
+            lng: coords.lng
+        }, { headers: authHeader() });
         toast.success(`Check-out ca ${getShiftName(shiftKey)} thành công!`);
         await fetchToday();
         await fetchMonthRecords();
     } catch(e) { 
-        toast.error(e.response?.data?.message || 'Lỗi check-out'); 
+        console.error('Check-out error details:', e);
+        toast.error(getErrorMsg(e, 'Lỗi check-out')); 
     }
     finally { checkOutLoading.value[shiftKey] = false; }
 }
@@ -159,6 +171,32 @@ const filteredHistory = computed(() => {
         return true;
     });
 });
+
+async function getCurrentLocation() {
+    return new Promise((resolve, reject) => {
+        if (!navigator.geolocation) {
+            reject(new Error('Trình duyệt của bạn không hỗ trợ định vị GPS.'));
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+            (err) => {
+                console.warn('Geolocation error:', err);
+                if (err.code === 1) reject(new Error('Bạn phải cho phép truy cập vị trí để chấm công.'));
+                else if (err.code === 3) reject(new Error('Hết thời gian xác định vị trí. Vui lòng thử lại.'));
+                else reject(new Error('Không thể xác định vị trí. Vui lòng thử lại.'));
+            },
+            { enableHighAccuracy: true, timeout: 10000 }
+        );
+    });
+}
+
+function getErrorMsg(e, defaultMsg) {
+    if (e.response?.data?.errors) {
+        return Object.values(e.response.data.errors).flat()[0];
+    }
+    return e.response?.data?.message || e.message || defaultMsg;
+}
 </script>
 
 <template>

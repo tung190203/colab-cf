@@ -86,6 +86,8 @@ function removeDeduction(idx) { editForm.value.deduction_details.splice(idx, 1);
 async function savePayroll() {
     saving.value = true;
     try {
+        const isSettled = adminUser.value?.role === 'admin' && editForm.value.is_settled;
+
         await axios.post('/api/admin/payroll', {
             staff_id: editForm.value.staff_id,
             month: selectedMonth.value,
@@ -97,7 +99,7 @@ async function savePayroll() {
             note: editForm.value.note,
             bonus_details: editForm.value.bonus_details,
             deduction_details: editForm.value.deduction_details,
-            is_settled: editForm.value.is_settled,
+            is_settled: isSettled,
         }, { headers: authHeader() });
         toast.success('Đã lưu bảng lương');
         editModal.value = false;
@@ -310,7 +312,7 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
                         <button v-if="!editForm.is_settled" class="pr-btn-draft" @click="editForm.is_settled = false; savePayroll()" :disabled="saving">
                             Lưu nháp
                         </button>
-                        <button v-if="!editForm.is_settled" class="pr-btn-save" @click="editForm.is_settled = true; savePayroll()" :disabled="saving">
+                        <button v-if="!editForm.is_settled && adminUser?.role === 'admin'" class="pr-btn-save" @click="editForm.is_settled = true; savePayroll()" :disabled="saving">
                             <span v-if="saving" class="pr-mini-spinner"></span>
                             Xác nhận Quyết toán
                         </button>

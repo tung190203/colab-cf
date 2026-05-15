@@ -337,6 +337,10 @@ class AdminController extends Controller
             'is_settled' => 'boolean',
         ]);
 
+        if ($request->boolean('is_settled') && $request->user()->role !== 'admin') {
+            return response()->json(['message' => 'Chỉ admin được xác nhận quyết toán bảng lương'], 403);
+        }
+
         $hourly    = (int) $request->hourly_rate;
         $hours     = (float) $request->worked_hours;
         $calcBase  = (int) ($hourly * $hours);

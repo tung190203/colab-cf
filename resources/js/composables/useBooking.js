@@ -5,6 +5,7 @@ const STORAGE_KEYS = {
   selectedPackage: 'booking_selectedPackage',
   selectedTable: 'booking_selectedTable',
   selectedTableId: 'booking_selectedTableId',
+  selectedTableCategory: 'booking_selectedTableCategory',
   form: 'booking_form',
 };
 
@@ -80,6 +81,10 @@ const selectedTableId = ref(
   JSON.parse(sessionStorage.getItem(STORAGE_KEYS.selectedTableId)) || null
 );
 
+const selectedTableCategory = ref(
+  JSON.parse(sessionStorage.getItem(STORAGE_KEYS.selectedTableCategory)) || null
+);
+
 const form = reactive(
   JSON.parse(sessionStorage.getItem(STORAGE_KEYS.form)) || {}
 );
@@ -125,6 +130,13 @@ watch(
   }
 );
 
+watch(
+  selectedTableCategory,
+  (val) => {
+    sessionStorage.setItem(STORAGE_KEYS.selectedTableCategory, JSON.stringify(val));
+  }
+);
+
 // Đồng bộ thay đổi form (extras) vào sessionStorage
 watch(
   form,
@@ -148,6 +160,7 @@ function selectPackage(p) {
 
 function selectTable(t) {
   selectedTable.value = t.code;
+  selectedTableCategory.value = t.category || null;
 }
 
 function selectId(t) {
@@ -245,6 +258,7 @@ function resetAll() {
   selectedPackage.value = null;
   selectedTable.value = null;
   selectedTableId.value = null;
+  selectedTableCategory.value = null;
   Object.keys(form).forEach((key) => {
     if (Array.isArray(form[key])) {
       form[key] = [];
@@ -260,6 +274,7 @@ function resetAll() {
   sessionStorage.removeItem(STORAGE_KEYS.selectedPackage);
   sessionStorage.removeItem(STORAGE_KEYS.selectedTable);
   sessionStorage.removeItem(STORAGE_KEYS.selectedTableId);
+  sessionStorage.removeItem(STORAGE_KEYS.selectedTableCategory);
   sessionStorage.removeItem(STORAGE_KEYS.form);
   sessionStorage.removeItem(START_TIME_KEY);
   sessionStorage.removeItem(END_TIME_KEY);
@@ -304,6 +319,8 @@ function formatCategoryName(key) {
       return 'GÓI CƠ BẢN';
     case 'vip':
       return 'ĐẶT PHÒNG HỌP';
+    case 'ultra':
+      return 'GÓI ULTRA';
     case 'services':
       return 'DỊCH VỤ';
     case 'office_services':
@@ -400,6 +417,7 @@ async function fetchPackages() {
         ...pkg,
         durationLabel: `${pkg.duration} phút`,
         price: pkg.price || 0,
+        free_drinks_count: Number(pkg.free_drinks_count) || 0,
       }));
     });
   } catch (error) {
@@ -465,16 +483,24 @@ const filteredTables = computed(() => {
   if (!selectedPackage.value) return tables.value;
 
   const copy = JSON.parse(JSON.stringify(tables.value));
+  const duration = Number(selectedPackage.value.duration) || 0;
 
-  if (selectedPackage.value.category === 'basic') {
+  if (selectedPackage.value.category === 'ship') {
+    return {};
+  }
+
+  if (selectedPackage.value.category === 'vip') {
     Object.keys(copy).forEach(cat => {
-      if (['vip_room'].includes(cat)) {
+      if (!['vip_room', 'meeting_room'].includes(cat)) {
         delete copy[cat];
       }
     });
-  } else if (selectedPackage.value.category === 'vip') {
+  } else {
     Object.keys(copy).forEach(cat => {
-      if (!['vip_room', 'meeting_room'].includes(cat)) {
+      if (cat === 'meeting_room' && duration < 240) {
+        delete copy[cat];
+      }
+      if (cat === 'vip_room' && duration < 480) {
         delete copy[cat];
       }
     });
@@ -486,12 +512,15 @@ const filteredTables = computed(() => {
 function selectTableFromUrl() {
   const tq = param.get('table');
   if (!tq || tq.toLowerCase() === 'reception') return;
-  const allTables = Object.values(tables.value).flat();
+  const allTables = Object.entries(tables.value).flatMap(([category, arr]) =>
+    arr.map((t) => ({ ...t, category }))
+  );
 
   const found = allTables.find((x) => x.code.toLowerCase() === tq.toLowerCase());
   if (found) {
     selectedTable.value = found.code;
     selectedTableId.value = found.id;
+    selectedTableCategory.value = found.category || null;
   } else {
     console.warn(`Table ${tq} không tồn tại hoặc đã bị đặt.`);
   }
@@ -504,6 +533,7 @@ export function useBooking() {
     selectedPackage,
     selectedTable,
     selectedTableId,
+    selectedTableCategory,
     form,
     services,
     formatVND,

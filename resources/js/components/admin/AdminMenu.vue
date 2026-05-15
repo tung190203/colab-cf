@@ -305,7 +305,7 @@ const displayPrice = computed({
                                     <button class="am-btn-edit" title="Sửa" @click="openEdit(item)">
                                         <Pencil :size="16" />
                                     </button>
-                                    <button class="am-btn-del" title="Xóa" @click="confirmDelete(item.id)">
+                                    <button class="am-btn-del" title="Xóa" @click="deleteItem(item.id)">
                                         <Trash2 :size="16" />
                                     </button>
                                 </div>

@@ -69,19 +69,7 @@ const formatDateTimeLocal = (date) => {
 
 function selectPackageWithBonus(pkg) {
   selectPackage(pkg);
-  
-  let freeDrinks = 0;
-  if (pkg.category === 'basic') {
-    freeDrinks = 1; // Mặc định các gói cơ bản thường có 1 nước miễn phí như trong ảnh
-  } else if (pkg.category === 'vip') {
-    // Logic cho gói VIP/Phòng họp
-    if (pkg.name.includes('1 giờ')) freeDrinks = 3;
-    else if (pkg.name.includes('2 giờ')) freeDrinks = 5;
-    else if (pkg.name.includes('Nửa ngày')) freeDrinks = 7;
-    else if (pkg.name.includes('Cả ngày')) freeDrinks = 9;
-  }
-  
-  sessionStorage.setItem('freeDrinks', freeDrinks);
+  sessionStorage.setItem('freeDrinks', Number(pkg.free_drinks_count) || 0);
   
   // Update end time based on package duration
   if (start_time.value) {
@@ -119,7 +107,7 @@ async function applyTimeSelection() {
       table_id: tableId,
       start_time: localStartTime.value,
       end_time: localEndTime.value,
-      mode_booking: selectedPackage.value.category === 'basic' ? 'seat' : 'room'
+      mode_booking: ['vip_room', 'meeting_room'].includes(tempSelectedTable.value.category) ? 'room' : 'seat'
     };
     
     const res = await axios.post('/api/check-table', data);
@@ -149,17 +137,14 @@ watch(localStartTime, (newVal) => {
 
 function isTableLocked(category) {
   if (!selectedPackage.value) return false;
-  
-  const pkgName = selectedPackage.value.name.toLowerCase();
-  
-  // Phòng Họp yêu cầu Nửa ngày trở lên
+  const duration = Number(selectedPackage.value.duration) || 0;
+
   if (category === 'meeting_room') {
-    return !(pkgName.includes('nửa ngày') || pkgName.includes('cả ngày'));
+    return duration < 240;
   }
-  
-  // Phòng VIP yêu cầu Cả ngày
+
   if (category === 'vip_room') {
-    return !pkgName.includes('cả ngày');
+    return duration < 480;
   }
   
   return false;
@@ -168,8 +153,8 @@ function isTableLocked(category) {
 function handleTableClick(table, category) {
   if (isTableLocked(category)) {
     let msg = 'Vị trí này yêu cầu gói cao hơn';
-    if (category === 'meeting_room') msg = 'Phòng họp yêu cầu gói Nửa ngày trở lên';
-    if (category === 'vip_room') msg = 'Phòng VIP yêu cầu gói Cả ngày';
+    if (category === 'meeting_room') msg = 'Phòng họp yêu cầu gói từ 240 phút trở lên';
+    if (category === 'vip_room') msg = 'Phòng VIP yêu cầu gói từ 480 phút trở lên';
     toast.info(msg);
     return;
   }
@@ -214,9 +199,9 @@ const displayTables = computed(() => {
   
   // Gộp indoor và outdoor
   const openAreaTables = [
-    ...(allTables.indoor || []),
-    ...(allTables.outdoor || []),
-    ...(allTables.private || [])
+    ...(allTables.indoor || []).map((t) => ({ ...t, category: 'indoor' })),
+    ...(allTables.outdoor || []).map((t) => ({ ...t, category: 'outdoor' })),
+    ...(allTables.private || []).map((t) => ({ ...t, category: 'private' }))
   ];
   
   if (openAreaTables.length > 0) {
@@ -226,7 +211,7 @@ const displayTables = computed(() => {
   // Các nhóm còn lại giữ nguyên
   Object.keys(allTables).forEach(cat => {
     if (cat !== 'indoor' && cat !== 'outdoor' && cat !== 'private') {
-      result[cat] = allTables[cat];
+      result[cat] = allTables[cat].map((t) => ({ ...t, category: cat }));
     }
   });
   
@@ -237,7 +222,7 @@ const displayTables = computed(() => {
 <template>
   <div class="booking-flow">
     <!-- Header -->
-    <header class="booking-header sticky-top py-3">
+    <header class="booking-header sticky-top py-2">
       <div class="container d-flex align-items-center px-4">
         <button class="header-back-btn me-4" @click="router.push('/')">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" class="bi bi-chevron-left" viewBox="0 0 16 16">
@@ -305,11 +290,11 @@ const displayTables = computed(() => {
               <h5 class="area-name mb-0">{{ formatCategoryName(category) }}</h5>
               <span v-if="category === 'meeting_room'" class="badge-lock">
                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-lock-fill" viewBox="0 0 16 16"><path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/></svg>
-                Nửa ngày+
+                240 phút+
               </span>
               <span v-if="category === 'vip_room'" class="badge-lock">
                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-lock-fill" viewBox="0 0 16 16"><path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/></svg>
-                Cả ngày
+                480 phút+
               </span>
             </div>
 

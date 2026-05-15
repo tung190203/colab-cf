@@ -51,6 +51,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/admin/menu/{id}', [MenuController::class, 'update']);
         Route::delete('/admin/menu/{id}', [MenuController::class, 'destroy']);
 
+        // Booking setup management
+        Route::get('/admin/packages', [BookingController::class, 'adminPackages']);
+        Route::post('/admin/packages', [BookingController::class, 'storePackage']);
+        Route::put('/admin/packages/{package}', [BookingController::class, 'updatePackage']);
+        Route::delete('/admin/packages/{package}', [BookingController::class, 'destroyPackage']);
+        Route::get('/admin/tables', [BookingController::class, 'adminTables']);
+        Route::post('/admin/tables', [BookingController::class, 'storeTable']);
+        Route::put('/admin/tables/{table}', [BookingController::class, 'updateTable']);
+        Route::delete('/admin/tables/{table}', [BookingController::class, 'destroyTable']);
+
         Route::post('/admin/schedule', [AdminController::class, 'saveSchedule']);
         Route::delete('/admin/schedule/{id}', [AdminController::class, 'deleteSchedule']);
     });

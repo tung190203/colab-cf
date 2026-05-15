@@ -118,7 +118,7 @@ const showBackButton = computed(() => {
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding: 40px 20px;
+  padding: 24px 20px;
   box-sizing: border-box;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   transition: all 0.3s ease;
@@ -343,13 +343,13 @@ const showBackButton = computed(() => {
 
 @media (min-width: 1025px) {
   .booking-root:not(.center-content) {
-    padding-top: 120px;
+    padding-top: 32px;
   }
 
   /* Giảm padding top cho các trang kết quả/thanh toán để không bị thừa scroll */
   .booking-root:has(.status-page),
   .booking-root:has(.vietqr-page) {
-    padding-top: 40px;
+    padding-top: 32px;
   }
 }
 

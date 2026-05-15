@@ -7,7 +7,11 @@ use Illuminate\Database\Eloquent\Model;
 class Table extends Model
 {
     protected $fillable = [
-        'code', 'status'
+        'code', 'status', 'category', 'total_seating', 'is_active'
+    ];
+
+    protected $casts = [
+        'is_active' => 'boolean',
     ];
 
     public function bookings()

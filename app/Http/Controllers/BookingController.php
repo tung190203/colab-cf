@@ -21,8 +21,8 @@ class BookingController extends Controller
     public function store(Request $request, MomoService $momo)
     {
         $validated = $request->validate([
-            'package_id' => 'required|exists:packages,id',
-            'table' => 'nullable|exists:tables,code',
+            'package_id' => 'required|exists:packages,id,is_active,1',
+            'table' => 'nullable|exists:tables,code,is_active,1',
             'start_time' => 'nullable|date',
             'end_time' => 'required|date|after:now',
             'extras' => 'array',
@@ -43,7 +43,9 @@ class BookingController extends Controller
 
         $tableId = null;
         if (!empty($validated['table'])) {
-            $selectedTable = Table::where('code', $validated['table'])->first();
+            $selectedTable = Table::where('code', $validated['table'])
+                ->where('is_active', true)
+                ->first();
             $tableId = $selectedTable->id;
 
             // Kiểm tra trùng lịch
@@ -65,16 +67,24 @@ class BookingController extends Controller
         }
 
         // Tính tổng tiền
-        $package = Package::findOrFail($validated['package_id']);
+        $package = Package::where('is_active', true)->findOrFail($validated['package_id']);
         $total = $package->price;
         $serviceQuantities = [];
+        $freeDrinksLeft = (int) ($package->free_drinks_count ?? 0);
+        $freeDrinkExcludedCategories = ['desserts', 'services', 'office_services', 'other_services'];
 
         if (!empty($validated['extras'])) {
             foreach ($validated['extras'] as $srv) {
                 $extra = Extra::find($srv['id']);
                 if ($extra) {
                     $quantity = (int) $srv['quantity'];
-                    $freeApplied = isset($srv['free_applied']) ? (int) $srv['free_applied'] : 0;
+                    $requestedFree = isset($srv['free_applied']) ? (int) $srv['free_applied'] : 0;
+                    $freeApplied = 0;
+
+                    if (!in_array($extra->category, $freeDrinkExcludedCategories, true)) {
+                        $freeApplied = min($quantity, $requestedFree, $freeDrinksLeft);
+                        $freeDrinksLeft -= $freeApplied;
+                    }
 
                     // Giá sau khi trừ free
                     $lineTotal = max(0, ($quantity - $freeApplied)) * $extra->price;
@@ -211,7 +221,8 @@ class BookingController extends Controller
 
     public function packages()
     {
-        $packages = Package::get()
+        $packages = Package::where('is_active', true)
+            ->get()
             ->groupBy('category')
             ->map(function ($items) {
                 return $items->map(function ($item) {
@@ -222,15 +233,97 @@ class BookingController extends Controller
                         'category' => $item->category,
                         'duration' => $item->duration,
                         'duration_label' => $item->duration_label,
+                        'free_drinks_count' => $item->free_drinks_count,
                     ];
                 })->values();
             });
         return response()->json($packages);
     }
 
+    public function adminPackages(Request $request)
+    {
+        $query = Package::query();
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('category', 'like', "%{$search}%");
+            });
+        }
+
+        return response()->json([
+            'items' => $query->withCount('bookings')
+                ->orderBy('category')
+                ->orderBy('duration')
+                ->orderBy('name')
+                ->get(),
+        ]);
+    }
+
+    public function storePackage(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'category' => 'required|string|max:255',
+            'price' => 'required|integer|min:0',
+            'duration' => 'required|integer|min:1',
+            'duration_label' => 'nullable|string|max:255',
+            'is_active' => 'boolean',
+            'free_drinks_count' => 'nullable|integer|min:0',
+        ]);
+        $validated['is_active'] = $request->has('is_active') ? $request->boolean('is_active') : true;
+        $validated['free_drinks_count'] = (int) ($validated['free_drinks_count'] ?? 0);
+
+        $package = Package::create($validated);
+
+        return response()->json([
+            'message' => 'Thêm gói thành công',
+            'item' => $package,
+        ], 201);
+    }
+
+    public function updatePackage(Request $request, Package $package)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'category' => 'required|string|max:255',
+            'price' => 'required|integer|min:0',
+            'duration' => 'required|integer|min:1',
+            'duration_label' => 'nullable|string|max:255',
+            'is_active' => 'boolean',
+            'free_drinks_count' => 'nullable|integer|min:0',
+        ]);
+        $validated['is_active'] = $request->has('is_active') ? $request->boolean('is_active') : $package->is_active;
+        $validated['free_drinks_count'] = (int) ($validated['free_drinks_count'] ?? 0);
+
+        $package->update($validated);
+
+        return response()->json([
+            'message' => 'Cập nhật gói thành công',
+            'item' => $package,
+        ]);
+    }
+
+    public function destroyPackage(Package $package)
+    {
+        if ($package->bookings()->exists()) {
+            return response()->json([
+                'message' => 'Không thể xoá gói đã có đơn đặt. Hãy sửa thông tin gói thay vì xoá.',
+            ], 422);
+        }
+
+        $package->delete();
+
+        return response()->json([
+            'message' => 'Xoá gói thành công',
+        ]);
+    }
+
     public function tables()
 {
     $tables = Table::select('id', 'code', 'category', 'status', 'total_seating')
+        ->where('is_active', true)
         ->get()
         ->groupBy('category')
         ->map(function ($items) {
@@ -251,6 +344,80 @@ class BookingController extends Controller
     return response()->json($tables);
     }
 
+    public function adminTables(Request $request)
+    {
+        $query = Table::query();
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('code', 'like', "%{$search}%")
+                    ->orWhere('category', 'like', "%{$search}%")
+                    ->orWhere('status', 'like', "%{$search}%");
+            });
+        }
+
+        return response()->json([
+            'items' => $query->withCount('bookings')
+                ->orderBy('category')
+                ->orderBy('code')
+                ->get(),
+        ]);
+    }
+
+    public function storeTable(Request $request)
+    {
+        $validated = $request->validate([
+            'code' => 'required|string|max:255|unique:tables,code',
+            'category' => 'required|string|max:255',
+            'status' => 'required|in:free,occupied',
+            'total_seating' => 'required|integer|min:0',
+            'is_active' => 'boolean',
+        ]);
+        $validated['is_active'] = $request->has('is_active') ? $request->boolean('is_active') : true;
+
+        $table = Table::create($validated);
+
+        return response()->json([
+            'message' => 'Thêm bàn thành công',
+            'item' => $table,
+        ], 201);
+    }
+
+    public function updateTable(Request $request, Table $table)
+    {
+        $validated = $request->validate([
+            'code' => 'required|string|max:255|unique:tables,code,' . $table->id,
+            'category' => 'required|string|max:255',
+            'status' => 'required|in:free,occupied',
+            'total_seating' => 'required|integer|min:0',
+            'is_active' => 'boolean',
+        ]);
+        $validated['is_active'] = $request->has('is_active') ? $request->boolean('is_active') : $table->is_active;
+
+        $table->update($validated);
+
+        return response()->json([
+            'message' => 'Cập nhật bàn thành công',
+            'item' => $table,
+        ]);
+    }
+
+    public function destroyTable(Table $table)
+    {
+        if ($table->bookings()->exists()) {
+            return response()->json([
+                'message' => 'Không thể xoá bàn đã có đơn đặt. Hãy sửa trạng thái hoặc mã bàn thay vì xoá.',
+            ], 422);
+        }
+
+        $table->delete();
+
+        return response()->json([
+            'message' => 'Xoá bàn thành công',
+        ]);
+    }
+
     public function checkTableAvailability(Request $request)
     {
         $tableId = $request->table_id;
@@ -259,7 +426,7 @@ class BookingController extends Controller
         $modeBooking = $request->mode_booking;
 
         // Lấy thông tin của bàn từ table_id
-        $table = Table::findOrFail($tableId);
+        $table = Table::where('is_active', true)->findOrFail($tableId);
 
         if ($modeBooking == 'seat') {
             $maxSeats = $table->total_seating;

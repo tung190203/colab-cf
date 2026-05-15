@@ -9,6 +9,7 @@ const router = useRouter();
 const {
   selectedPackage,
   selectedTable,
+  selectedTableCategory,
   extras,
   total,
   formatVND,
@@ -59,13 +60,11 @@ async function pay(method) {
       customer_name: name.value,
       customer_phone: phone.value,
       mode_booking:
-        selectedPackage.value.category === 'basic'
-          ? 'seat'
-          : selectedPackage.value.category === 'vip'
+        selectedPackage.value.category === 'ship'
+          ? 'order'
+          : ['vip_room', 'meeting_room'].includes(selectedTableCategory.value)
             ? 'room'
-            : selectedPackage.value.category === 'ship'
-              ? 'order'
-              : null,
+            : 'seat',
 
       note: note.value || null,
       address: address.value || null,
@@ -445,4 +444,3 @@ textarea.auth-input {
   color: #2D4F1E !important;
 }
 </style>
-

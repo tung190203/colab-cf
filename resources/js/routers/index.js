@@ -17,6 +17,7 @@ import AdminSchedule from '../components/admin/AdminSchedule.vue';
 import AdminPayroll from '../components/admin/AdminPayroll.vue';
 import AdminOrders from '../components/admin/AdminOrders.vue';
 import AdminMenu from '../components/admin/AdminMenu.vue';
+import AdminBookingSetup from '../components/admin/AdminBookingSetup.vue';
 
 // Staff components
 import StaffAttendance from '../components/staff/StaffAttendance.vue';
@@ -45,6 +46,7 @@ const routes = [
   { path: '/admin/schedule', component: AdminSchedule, name: 'AdminSchedule', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
   { path: '/admin/payroll', component: AdminPayroll, name: 'AdminPayroll', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
   { path: '/admin/menu', component: AdminMenu, name: 'AdminMenu', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
+  { path: '/admin/booking-setup', component: AdminBookingSetup, name: 'AdminBookingSetup', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
 
   // ─── Shared admin+staff routes ───────────────────────────────────────────────
   { path: '/staff', redirect: '/staff/dashboard' },

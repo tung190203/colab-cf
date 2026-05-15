@@ -15,6 +15,7 @@ import {
     CheckCircle2,
     Clock,
     Coffee,
+    Settings2,
     ChevronLeft,
     ChevronRight,
     PanelLeftClose,
@@ -66,6 +67,7 @@ const navItems = computed(() => {
         { label: 'Quản lý thành viên', icon: UserCircle, to: '/admin/members/list', roles: ['admin'] },
         { label: 'Quản lý nhân viên', icon: Users, to: '/admin/staff', roles: ['admin', 'shift_leader'] },
         { label: 'Quản lý Menu', icon: Coffee, to: '/admin/menu', roles: ['admin', 'shift_leader'] },
+        { label: 'Gói & bàn', icon: Settings2, to: '/admin/booking-setup', roles: ['admin', 'shift_leader'] },
         { label: 'Quản lý lịch làm', icon: CalendarDays, to: '/admin/schedule', roles: ['admin', 'shift_leader'] },
         { label: 'Bảng lương NV', icon: CircleDollarSign, to: '/admin/payroll', roles: ['admin', 'shift_leader'] },
         { label: 'Lương của tôi', icon: CircleDollarSign, to: '/staff/payroll', roles: ['staff', 'shift_leader'] },
@@ -437,4 +439,3 @@ const isActive = (path) => route.path === path;
     }
 }
 </style>
-

@@ -1,16 +1,27 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { toast } from 'vue3-toastify';
 import { useAdminAuth } from '../../composables/useAdminAuth';
 
 const router = useRouter();
-const { login, adminUser } = useAdminAuth();
+const { login } = useAdminAuth();
 
 const phone = ref('');
 const password = ref('');
 const loading = ref(false);
 const showPass = ref(false);
+const showQr = ref(false);
+const checkInUrl = ref('');
+
+const checkInQrUrl = computed(() => {
+    if (!checkInUrl.value) return '';
+    return `https://api.qrserver.com/v1/create-qr-code/?size=280x280&margin=12&data=${encodeURIComponent(checkInUrl.value)}`;
+});
+
+onMounted(() => {
+    checkInUrl.value = `${window.location.origin}/checkin`;
+});
 
 async function handleLogin() {
     if (!phone.value || !password.value) {
@@ -46,58 +57,78 @@ async function handleLogin() {
         <div class="al-bg-left"></div>
         <div class="al-bg-right"></div>
 
-        <div class="al-card">
-            <div class="al-logo-wrap">
-                <img src="../../../images/logo.png" alt="Colab Coffee" class="al-logo" />
+        <div class="al-shell" :class="{ 'is-qr-mode': showQr }">
+            <div class="al-card">
+                <div class="al-logo-wrap">
+                    <img src="../../../images/logo.png" alt="Colab Coffee" class="al-logo" />
+                </div>
+
+                <h1 class="al-title">Đăng nhập</h1>
+                <p class="al-subtitle">Dành cho admin & nhân viên Co-lab</p>
+
+                <div class="al-form">
+                    <div class="al-field">
+                        <label class="al-label">Số điện thoại</label>
+                        <div class="al-input-wrap">
+                            <svg class="al-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>
+                            </svg>
+                            <input v-model="phone" type="tel" class="al-input" placeholder="09xx xxx xxx" @keyup.enter="handleLogin" />
+                        </div>
+                    </div>
+
+                    <div class="al-field">
+                        <label class="al-label">Mật khẩu</label>
+                        <div class="al-input-wrap">
+                            <svg class="al-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                <path d="M7 11V7a5 5 0 0110 0v4"/>
+                            </svg>
+                            <input v-model="password" :type="showPass ? 'text' : 'password'" class="al-input" placeholder="••••••••" @keyup.enter="handleLogin" />
+                            <button class="al-eye" @click="showPass = !showPass" type="button">
+                                <svg v-if="!showPass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                    <circle cx="12" cy="12" r="3"/>
+                                </svg>
+                                <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                                    <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <button class="al-btn" :class="{ 'al-btn--loading': loading }" @click="handleLogin" :disabled="loading">
+                        <span v-if="!loading">Đăng nhập</span>
+                        <span v-else class="al-spinner"></span>
+                    </button>
+                </div>
+
+                <div class="al-back">
+                    <router-link to="/" class="al-back-link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                            <path d="M19 12H5M12 19l-7-7 7-7"/>
+                        </svg>
+                        Về trang chủ
+                    </router-link>
+
+                    <button class="al-qr-toggle" type="button" @click="showQr = !showQr">
+                        {{ showQr ? 'Ẩn mã QR' : 'Hiển thị mã QR' }}
+                    </button>
+                </div>
             </div>
 
-            <h1 class="al-title">Đăng nhập</h1>
-            <p class="al-subtitle">Dành cho admin & nhân viên Co-lab</p>
-
-            <div class="al-form">
-                <div class="al-field">
-                    <label class="al-label">Số điện thoại</label>
-                    <div class="al-input-wrap">
-                        <svg class="al-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>
-                        </svg>
-                        <input v-model="phone" type="tel" class="al-input" placeholder="09xx xxx xxx" @keyup.enter="handleLogin" />
-                    </div>
+            <div class="al-qr-panel">
+                <div class="al-qr-head">
+                    <span class="al-qr-kicker">Check-in nhân viên</span>
+                    <h2>Mã QR chấm công</h2>
                 </div>
-
-                <div class="al-field">
-                    <label class="al-label">Mật khẩu</label>
-                    <div class="al-input-wrap">
-                        <svg class="al-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                            <path d="M7 11V7a5 5 0 0110 0v4"/>
-                        </svg>
-                        <input v-model="password" :type="showPass ? 'text' : 'password'" class="al-input" placeholder="••••••••" @keyup.enter="handleLogin" />
-                        <button class="al-eye" @click="showPass = !showPass" type="button">
-                            <svg v-if="!showPass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                                <circle cx="12" cy="12" r="3"/>
-                            </svg>
-                            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
-                                <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22"/>
-                            </svg>
-                        </button>
-                    </div>
+                <div class="al-qr-box">
+                    <img v-if="checkInQrUrl" :src="checkInQrUrl" alt="QR check-in" class="al-qr-img" />
                 </div>
-
-                <button class="al-btn" :class="{ 'al-btn--loading': loading }" @click="handleLogin" :disabled="loading">
-                    <span v-if="!loading">Đăng nhập</span>
-                    <span v-else class="al-spinner"></span>
+                <p class="al-qr-link">{{ checkInUrl }}</p>
+                <button class="al-qr-back" type="button" @click="showQr = false">
+                    Quay lại màn login
                 </button>
-            </div>
-
-            <div class="al-back">
-                <router-link to="/" class="al-back-link">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-                        <path d="M19 12H5M12 19l-7-7 7-7"/>
-                    </svg>
-                    Về trang chủ
-                </router-link>
             </div>
         </div>
     </div>
@@ -149,6 +180,17 @@ async function handleLogin() {
     position: relative;
     z-index: 1;
     box-shadow: 0 32px 80px rgba(0, 0, 0, 0.5);
+}
+
+.al-shell {
+    width: 100%;
+    max-width: 960px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    position: relative;
+    z-index: 1;
 }
 
 .al-logo-wrap {
@@ -291,6 +333,10 @@ async function handleLogin() {
 .al-back {
     text-align: center;
     margin-top: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
 }
 
 .al-back-link {
@@ -305,8 +351,151 @@ async function handleLogin() {
 }
 .al-back-link:hover { color: rgba(255,255,255,0.75); }
 
+.al-qr-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 42px;
+    padding: 0 18px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 0.875rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: 'Inter', sans-serif;
+}
+
+.al-qr-toggle:hover {
+    background: rgba(101, 163, 13, 0.12);
+    border-color: rgba(101, 163, 13, 0.45);
+    color: #fff;
+}
+
+.al-qr-panel {
+    display: none;
+    width: 100%;
+    max-width: 360px;
+    background: rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 28px;
+    padding: 28px;
+    box-shadow: 0 32px 80px rgba(0, 0, 0, 0.42);
+    text-align: center;
+}
+
+.al-shell.is-qr-mode .al-card {
+    display: none;
+}
+
+.al-shell.is-qr-mode .al-qr-panel {
+    display: block;
+}
+
+.al-qr-head {
+    margin-bottom: 20px;
+}
+
+.al-qr-kicker {
+    display: block;
+    margin-bottom: 6px;
+    color: rgba(132, 204, 22, 0.9);
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.al-qr-head h2 {
+    margin: 0;
+    color: #fff;
+    font-size: 1.35rem;
+    font-weight: 800;
+}
+
+.al-qr-box {
+    background: #fff;
+    border-radius: 18px;
+    padding: 16px;
+    min-height: 280px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.al-qr-img {
+    width: 100%;
+    max-width: 280px;
+    aspect-ratio: 1;
+    display: block;
+}
+
+.al-qr-link {
+    margin: 16px 0 0;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 0.8rem;
+    line-height: 1.4;
+    word-break: break-all;
+}
+
+.al-qr-back {
+    width: 100%;
+    margin-top: 20px;
+    min-height: 46px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.86);
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: 'Inter', sans-serif;
+}
+
+.al-qr-back:hover {
+    background: rgba(101, 163, 13, 0.12);
+    border-color: rgba(101, 163, 13, 0.45);
+    color: #fff;
+}
+
+@media (orientation: landscape) and (min-width: 760px) {
+    .al-page {
+        overflow-y: auto;
+    }
+
+    .al-shell,
+    .al-shell.is-qr-mode {
+        flex-direction: row;
+        justify-content: center;
+        align-items: stretch;
+    }
+
+    .al-shell .al-card,
+    .al-shell.is-qr-mode .al-card {
+        display: block;
+        flex: 0 1 440px;
+    }
+
+    .al-shell .al-qr-panel,
+    .al-shell.is-qr-mode .al-qr-panel {
+        flex: 0 1 360px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    .al-qr-toggle,
+    .al-qr-back {
+        display: none;
+    }
+}
+
 @media (max-width: 480px) {
     .al-card { padding: 36px 24px; border-radius: 24px; }
     .al-title { font-size: 1.7rem; }
+    .al-qr-panel { padding: 24px; border-radius: 24px; }
 }
 </style>

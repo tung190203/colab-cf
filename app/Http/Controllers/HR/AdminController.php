@@ -11,6 +11,7 @@ use App\Models\StaffSchedule;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class AdminController extends Controller
@@ -78,6 +79,7 @@ class AdminController extends Controller
                 $checkOut = Carbon::parse($att->check_out_at);
                 $workedHoursThisMonth += round(abs($checkOut->diffInMinutes($checkIn, false)) / 60, 2);
             }
+            $workedHoursThisMonth = round($workedHoursThisMonth, 2);
         }
 
         $totalStaff = User::whereIn('role', ['staff', 'shift_leader'])->count();
@@ -274,7 +276,20 @@ class AdminController extends Controller
     public function deleteSchedule($id)
     {
         $schedule = StaffSchedule::findOrFail($id);
-        $schedule->delete();
+
+        DB::transaction(function () use ($schedule) {
+            $date = $schedule->date->format('Y-m-d');
+
+            Attendance::where('staff_id', $schedule->staff_id)
+                ->whereDate('date', $date)
+                ->where('shift', $schedule->shift)
+                ->delete();
+
+            $schedule->delete();
+
+            $this->recalculateDraftPayrollForDate($schedule->staff_id, $date);
+        });
+
         return response()->json(['message' => 'Đã xóa lịch']);
     }
 
@@ -306,6 +321,7 @@ class AdminController extends Controller
                 // Làm tròn đến 2 chữ số thập phân
                 $workedHours += round(abs($checkOut->diffInMinutes($checkIn, false)) / 60, 2);
             }
+            $workedHours = round($workedHours, 2);
 
             return [
                 'staff_id'     => $u->id,
@@ -342,7 +358,7 @@ class AdminController extends Controller
         }
 
         $hourly    = (int) $request->hourly_rate;
-        $hours     = (float) $request->worked_hours;
+        $hours     = round((float) $request->worked_hours, 2);
         $calcBase  = (int) ($hourly * $hours);
         $bonus     = (int) ($request->bonus ?? 0);
         $deduction = (int) ($request->deduction ?? 0);
@@ -383,21 +399,96 @@ class AdminController extends Controller
             'shifts.*.color'      => 'nullable|string',
         ]);
 
-        $keys = collect($request->shifts)->pluck('key')->toArray();
-        Shift::whereNotIn('key', $keys)->delete();
+        DB::transaction(function () use ($request) {
+            $keys = collect($request->shifts)->pluck('key')->toArray();
+            $removedKeys = Shift::whereNotIn('key', $keys)->pluck('key');
 
-        foreach ($request->shifts as $item) {
-            Shift::updateOrCreate(
-                ['key' => $item['key']],
-                [
-                    'name'       => $item['name'],
-                    'start_time' => $item['start_time'],
-                    'end_time'   => $item['end_time'],
-                    'color'      => $item['color'] ?? '#2D4F1E',
-                ]
-            );
-        }
+            if ($removedKeys->isNotEmpty()) {
+                $affectedPayrolls = Attendance::query()
+                    ->select('staff_id', 'date')
+                    ->whereIn('shift', $removedKeys)
+                    ->get()
+                    ->map(fn($attendance) => [
+                        'staff_id' => $attendance->staff_id,
+                        'month' => $attendance->date->month,
+                        'year' => $attendance->date->year,
+                    ])
+                    ->unique(fn($item) => $item['staff_id'] . '-' . $item['month'] . '-' . $item['year'])
+                    ->values();
+
+                Attendance::whereIn('shift', $removedKeys)->delete();
+                StaffSchedule::whereIn('shift', $removedKeys)->delete();
+                Shift::whereIn('key', $removedKeys)->delete();
+
+                foreach ($affectedPayrolls as $item) {
+                    $this->recalculateDraftPayroll($item['staff_id'], $item['month'], $item['year']);
+                }
+            }
+
+            foreach ($request->shifts as $item) {
+                Shift::updateOrCreate(
+                    ['key' => $item['key']],
+                    [
+                        'name'       => $item['name'],
+                        'start_time' => $item['start_time'],
+                        'end_time'   => $item['end_time'],
+                        'color'      => $item['color'] ?? '#2D4F1E',
+                    ]
+                );
+            }
+        });
 
         return response()->json(['message' => 'Cập nhật ca làm thành công', 'shifts' => Shift::all()]);
+    }
+
+    private function recalculateDraftPayrollForDate(int $staffId, string $date): void
+    {
+        $payrollDate = Carbon::parse($date);
+        $this->recalculateDraftPayroll($staffId, $payrollDate->month, $payrollDate->year);
+    }
+
+    private function recalculateDraftPayroll(int $staffId, int $month, int $year): void
+    {
+        $payroll = Payroll::where('staff_id', $staffId)
+            ->where('month', $month)
+            ->where('year', $year)
+            ->where('is_settled', false)
+            ->first();
+
+        if (!$payroll) {
+            return;
+        }
+
+        $workedHours = $this->calculateWorkedHours($staffId, $month, $year);
+        $hourlyRate = (int) $payroll->hourly_rate;
+        $calculatedSalary = (int) ($hourlyRate * $workedHours);
+        $bonus = (int) $payroll->bonus;
+        $deduction = (int) $payroll->deduction;
+
+        $payroll->update([
+            'worked_hours' => $workedHours,
+            'calculated_salary' => $calculatedSalary,
+            'total' => max(0, $calculatedSalary + $bonus - $deduction),
+        ]);
+    }
+
+    private function calculateWorkedHours(int $staffId, int $month, int $year): float
+    {
+        $workedHours = 0;
+
+        $attendances = Attendance::where('staff_id', $staffId)
+            ->whereMonth('date', $month)
+            ->whereYear('date', $year)
+            ->whereNotNull('check_in_at')
+            ->whereNotNull('check_out_at')
+            ->get();
+
+        foreach ($attendances as $attendance) {
+            $checkIn = Carbon::parse($attendance->check_in_at);
+            $checkOut = Carbon::parse($attendance->check_out_at);
+            $workedHours += round(abs($checkOut->diffInMinutes($checkIn, false)) / 60, 2);
+        }
+
+        return round($workedHours, 2);
     }
 }

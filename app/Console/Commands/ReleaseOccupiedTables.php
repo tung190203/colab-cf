@@ -15,53 +15,46 @@ class ReleaseOccupiedTables extends Command
     public function handle(): int
     {
         $now = Carbon::now();
-        $c1Id = Table::where('code', 'C1')->value('id');
+        $occupiedTableIds = $this->activeOccupiedTableIds($now);
 
-        $tables = Table::where('status', 'occupied')->get();
-        $released = 0;
+        $occupied = Table::query()
+            ->where('is_active', true)
+            ->whereIn('id', $occupiedTableIds)
+            ->where('status', '!=', 'occupied')
+            ->update(['status' => 'occupied']);
 
-        foreach ($tables as $table) {
-            if ($this->hasActiveBooking($table, $now, $c1Id)) {
-                continue;
-            }
+        $freeQuery = Table::query()
+            ->where('is_active', true)
+            ->where('status', 'occupied');
 
-            $table->status = 'free';
-            $table->save();
-            $this->info("Released table {$table->code}");
-            $released++;
+        if ($occupiedTableIds->isNotEmpty()) {
+            $freeQuery->whereNotIn('id', $occupiedTableIds);
         }
 
-        $this->info("Released {$released} table(s).");
+        $released = $freeQuery->update(['status' => 'free']);
+
+        $this->info("Occupied {$occupied} table(s), released {$released} table(s).");
         return 0;
     }
 
-    protected function hasActiveBooking(Table $table, Carbon $now, ?int $c1Id): bool
+    protected function activeOccupiedTableIds(Carbon $now)
     {
-        $activeBookingQuery = Booking::where('status', 'confirmed')
+        $activeBookings = Booking::where('status', 'confirmed')
+            ->whereNotNull('table_id')
             ->where('start_time', '<=', $now)
-            ->where('end_time', '>', $now);
+            ->where('end_time', '>', $now)
+            ->get(['table_id', 'mode_booking']);
 
-        if (in_array($table->code, ['C2', 'C3'], true)) {
-            $hasDirect = (clone $activeBookingQuery)
-                ->where('table_id', $table->id)
-                ->exists();
+        $tableIds = $activeBookings->pluck('table_id');
 
-            if ($hasDirect) {
-                return true;
-            }
+        $c1Id = Table::where('code', 'C1')->value('id');
+        $hasActiveC1RoomBooking = $c1Id
+            && $activeBookings->contains(fn($booking) => (int) $booking->table_id === (int) $c1Id && $booking->mode_booking === 'room');
 
-            if ($c1Id) {
-                return (clone $activeBookingQuery)
-                    ->where('table_id', $c1Id)
-                    ->where('mode_booking', 'room')
-                    ->exists();
-            }
-
-            return false;
+        if ($hasActiveC1RoomBooking) {
+            $tableIds = $tableIds->merge(Table::whereIn('code', ['C2', 'C3'])->pluck('id'));
         }
 
-        return (clone $activeBookingQuery)
-            ->where('table_id', $table->id)
-            ->exists();
+        return $tableIds->unique()->values();
     }
 }

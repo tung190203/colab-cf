@@ -3,6 +3,7 @@
 use App\Console\Commands\ReleaseOccupiedTables;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -11,3 +12,5 @@ Artisan::command('inspire', function () {
 Artisan::command('booking:release-tables', function () {
     return app(ReleaseOccupiedTables::class)->handle();
 })->purpose('Giải phóng các bàn đã hết giờ booking');
+
+Schedule::command('booking:release-tables')->everyFiveMinutes();

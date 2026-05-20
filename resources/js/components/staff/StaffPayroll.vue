@@ -35,6 +35,13 @@ async function fetchHistory() {
 }
 
 function fmt(v) { return new Intl.NumberFormat('vi-VN').format(v) + ' ₫'; }
+function roundHours(v) {
+    const n = Number(v || 0);
+    return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+function fmtHours(v) {
+    return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(roundHours(v));
+}
 
 const total = computed(() => {
     if (!payroll.value) return 0;
@@ -101,7 +108,7 @@ const getDeductionIcon = (label) => {
                 <div class="sp-empty-icon">💰</div>
                 <h3>Chưa có bảng lương chính thức</h3>
                 <p>Bảng lương tháng {{ selectedMonth }}/{{ selectedYear }} chưa được quyết toán. Liên hệ quản lý để biết thêm chi tiết.</p>
-                <div class="sp-empty-hours">Số giờ đã chấm công: <strong>{{ workedHours }}h</strong></div>
+                <div class="sp-empty-hours">Số giờ đã chấm công: <strong>{{ fmtHours(workedHours) }}h</strong></div>
             </div>
             
             <div v-else class="sp-grid">

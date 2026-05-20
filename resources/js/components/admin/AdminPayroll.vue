@@ -41,7 +41,7 @@ onMounted(fetchPayroll);
 
 function openEdit(item) {
     const hourly = Number(item.payroll?.hourly_rate ?? item.hourly_rate ?? 0);
-    const hours = Number(item.payroll?.worked_hours ?? item.worked_hours ?? 0);
+    const hours = roundHours(item.payroll?.worked_hours ?? item.worked_hours ?? 0);
     const calc = item.payroll ? Number(item.payroll.calculated_salary) : Math.round(hourly * hours);
     
     editForm.value = {
@@ -87,6 +87,7 @@ async function savePayroll() {
     saving.value = true;
     try {
         const isSettled = adminUser.value?.role === 'admin' && editForm.value.is_settled;
+        editForm.value.worked_hours = roundHours(editForm.value.worked_hours);
 
         await axios.post('/api/admin/payroll', {
             staff_id: editForm.value.staff_id,
@@ -110,7 +111,7 @@ async function savePayroll() {
 
 function computedTotal(item) {
     const hourly = Number(item.payroll?.hourly_rate ?? item.hourly_rate ?? 0);
-    const hours = Number(item.payroll?.worked_hours ?? item.worked_hours ?? 0);
+    const hours = roundHours(item.payroll?.worked_hours ?? item.worked_hours ?? 0);
     const bonus = Number(item.payroll?.bonus ?? 0);
     const ded = Number(item.payroll?.deduction ?? 0);
     
@@ -119,6 +120,13 @@ function computedTotal(item) {
 }
 
 function fmt(v) { return new Intl.NumberFormat('vi-VN').format(v) + ' ₫'; }
+function roundHours(v) {
+    const n = Number(v || 0);
+    return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+function fmtHours(v) {
+    return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(roundHours(v));
+}
 function fmtNoUnit(v) { 
     if (!v && v !== 0) return '';
     return new Intl.NumberFormat('vi-VN').format(v); 
@@ -215,7 +223,7 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
                                 </div>
                             </td>
                             <td class="pr-center">
-                                <span>{{ item.worked_hours }}h</span>
+                                <span>{{ fmtHours(item.payroll?.worked_hours ?? item.worked_hours) }}h</span>
                             </td>
                             <td>{{ fmt(item.payroll?.hourly_rate ?? item.hourly_rate ?? 0) }}</td>
                             <td>{{ fmt(item.payroll ? item.payroll.calculated_salary : Math.round(Number(item.hourly_rate) * Number(item.worked_hours))) }}</td>
@@ -261,7 +269,7 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
                                 <label>Giờ làm thực tế</label>
                                 <input 
                                     v-model.number="editForm.worked_hours"
-                                    @input="editForm.calculated_salary = Math.round(editForm.hourly_rate * editForm.worked_hours)"
+                                    @input="editForm.worked_hours = roundHours(editForm.worked_hours); editForm.calculated_salary = Math.round(editForm.hourly_rate * editForm.worked_hours)"
                                     type="number" step="0.1" placeholder="0" :disabled="editForm.is_settled"
                                 />
                             </div>

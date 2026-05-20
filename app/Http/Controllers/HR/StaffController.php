@@ -202,6 +202,7 @@ class StaffController extends Controller
             $checkOut = Carbon::parse($att->check_out_at);
             $workedHours += round(abs($checkOut->diffInMinutes($checkIn, false)) / 60, 2);
         }
+        $workedHours = round($workedHours, 2);
 
         return response()->json([
             'payroll'      => $payroll,

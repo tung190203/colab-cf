@@ -11,6 +11,8 @@ const {
   selectedTable,
   selectedTableCategory,
   extras,
+  usesExtraOnlyPricing,
+  extraLinePrice,
   total,
   formatVND,
   start_time,
@@ -54,7 +56,7 @@ async function pay(method) {
       extras: extras.value.map((e) => ({
         id: e.id,
         quantity: e.quantity || 1,
-        free_applied: e.freeApplied || 0,
+        free_applied: usesExtraOnlyPricing.value ? 0 : (e.freeApplied || 0),
       })),
       payment_method: method,
       customer_name: name.value,
@@ -184,14 +186,14 @@ function callHotline() {
             
             <div class="summary-item highlight mt-3 border-top pt-3">
               <span class="label">Giá gói</span>
-              <span class="value">{{ formatVND(selectedPackage?.price) ?? '-' }}</span>
+              <span class="value">{{ usesExtraOnlyPricing ? 'Không tính khi có gọi món' : (formatVND(selectedPackage?.price) ?? '-') }}</span>
             </div>
 
             <div v-if="extras.length" class="extras-list mt-2">
               <div v-for="(e, i) in extras" :key="i" class="summary-item extra-item">
                 <span class="label ms-2 text-muted">{{ e.name }} x{{ e.quantity }}</span>
-                <span class="value" :class="{ 'text-success': e.totalPrice === 0 }">
-                  {{ e.totalPrice > 0 ? formatVND(e.totalPrice) : 'Miễn phí' }}
+                <span class="value" :class="{ 'text-success': !usesExtraOnlyPricing && e.totalPrice === 0 }">
+                  {{ extraLinePrice(e) > 0 ? formatVND(extraLinePrice(e)) : 'Miễn phí' }}
                 </span>
               </div>
             </div>

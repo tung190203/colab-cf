@@ -67,6 +67,35 @@ const formatDateTimeLocal = (date) => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
 
+function normalizeTag(tag) {
+  if (typeof tag === 'string') {
+    return { label: tag, bg_color: '#1a3a1b', text_color: '#ffffff' };
+  }
+
+  return {
+    label: tag?.label || tag?.name || '',
+    bg_color: tag?.bg_color || tag?.bgColor || '#1a3a1b',
+    text_color: tag?.text_color || tag?.textColor || '#ffffff',
+  };
+}
+
+function tagLabel(tag) {
+  return normalizeTag(tag).label;
+}
+
+function tagKey(tag) {
+  const normalized = normalizeTag(tag);
+  return `${normalized.label}-${normalized.bg_color}-${normalized.text_color}`;
+}
+
+function tagStyle(tag) {
+  const normalized = normalizeTag(tag);
+  return {
+    backgroundColor: normalized.bg_color,
+    color: normalized.text_color,
+  };
+}
+
 function selectPackageWithBonus(pkg) {
   selectPackage(pkg);
   sessionStorage.setItem('freeDrinks', Number(pkg.free_drinks_count) || 0);
@@ -356,10 +385,10 @@ const displayTables = computed(() => {
                   class="card drink-card h-100"
                   :class="{ 'selected': form[category]?.some(e => e.id === item.id) }"
                   @click="toggleExtra(item, category)"
-                >
+                  >
                   <div v-if="item.tags && item.tags.length > 0" class="drink-tags-container">
-                    <span v-for="tag in item.tags" :key="tag" class="drink-badge" :class="tag.toLowerCase().replace(/\s+/g, '-')">
-                      {{ tag }}
+                    <span v-for="tag in item.tags" :key="tagKey(tag)" class="drink-badge" :style="tagStyle(tag)">
+                      {{ tagLabel(tag) }}
                     </span>
                   </div>
                   
@@ -697,28 +726,33 @@ const displayTables = computed(() => {
 
 .drink-tags-container {
   position: absolute;
-  top: 8px;
-  left: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  top: 0;
+  right: 0;
+  width: 96px;
+  height: 96px;
+  overflow: hidden;
   z-index: 5;
+  pointer-events: none;
 }
 
 .drink-badge {
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 0.6rem;
+  position: absolute;
+  top: 16px;
+  right: -36px;
+  width: 132px;
+  padding: 6px 0;
+  border-radius: 0;
+  font-size: 0.62rem;
   font-weight: 800;
   text-transform: uppercase;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  text-align: center;
+  transform: rotate(45deg);
+  transform-origin: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+  letter-spacing: 0.02em;
+  line-height: 1.1;
 }
 
-/* Badge colors */
-.drink-badge.best-seller { background: #ff7e5f; color: white; }
-.drink-badge.new { background: #feb47b; color: white; }
-.drink-badge.ưu-đãi { background: #43cea2; color: white; }
-.drink-badge.giới-hạn { background: #185a9d; color: white; }
 .drink-badge { background: #1a3a1b; color: white; } /* Default */
 
 .quantity-control {

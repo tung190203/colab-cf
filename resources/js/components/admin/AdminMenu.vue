@@ -43,6 +43,30 @@ const pagination = ref({
     to: 0,
     per_page: 5
 });
+const visiblePageItems = computed(() => buildPageItems(pagination.value.current_page, pagination.value.last_page));
+
+function buildPageItems(current, total) {
+    if (total <= 7) {
+        return Array.from({ length: total }, (_, index) => ({ type: 'page', page: index + 1, key: `page-${index + 1}` }));
+    }
+
+    const pages = new Set([1, total, current - 1, current, current + 1]);
+    if (current <= 3) [2, 3, 4].forEach(page => pages.add(page));
+    if (current >= total - 2) [total - 3, total - 2, total - 1].forEach(page => pages.add(page));
+
+    const sortedPages = [...pages].filter(page => page >= 1 && page <= total).sort((a, b) => a - b);
+    const items = [];
+
+    sortedPages.forEach((page, index) => {
+        const previous = sortedPages[index - 1];
+        if (index > 0 && page - previous > 1) {
+            items.push({ type: 'ellipsis', key: `ellipsis-${previous}-${page}` });
+        }
+        items.push({ type: 'page', page, key: `page-${page}` });
+    });
+
+    return items;
+}
 
 // Detail State
 const editingItem = ref(null);
@@ -58,11 +82,35 @@ const form = ref({
 });
 const uploading = ref(false);
 const customTag = ref('');
+const customTagBgColor = ref('#1a3a1b');
+const customTagTextColor = ref('#ffffff');
+
+const selectedTagBgColor = computed({
+    get: () => {
+        const selected = form.value.tags[0];
+        return selected ? normalizeTag(selected).bg_color : customTagBgColor.value;
+    },
+    set: (color) => {
+        customTagBgColor.value = color;
+        updateSelectedTagColor({ bg_color: color });
+    }
+});
+
+const selectedTagTextColor = computed({
+    get: () => {
+        const selected = form.value.tags[0];
+        return selected ? normalizeTag(selected).text_color : customTagTextColor.value;
+    },
+    set: (color) => {
+        customTagTextColor.value = color;
+        updateSelectedTagColor({ text_color: color });
+    }
+});
 
 function addCustomTag() {
     const val = customTag.value.trim();
     if (val) {
-        form.value.tags = [val];
+        form.value.tags = [makeTag(val, customTagBgColor.value, customTagTextColor.value)];
     }
     customTag.value = '';
 }
@@ -134,7 +182,7 @@ function openEdit(item) {
         description: item.description || '',
         image: item.image || '',
         status: item.status !== undefined ? item.status : true,
-        tags: Array.isArray(item.tags) ? [...item.tags] : []
+        tags: Array.isArray(item.tags) ? item.tags.map(normalizeTag) : []
     };
     view.value = 'detail';
 }
@@ -203,11 +251,70 @@ async function handleImageUpload(e) {
 
 
 
+function makeTag(label, bgColor = '#1a3a1b', textColor = '#ffffff') {
+    return {
+        label,
+        bg_color: bgColor,
+        text_color: textColor,
+    };
+}
+
+function normalizeTag(tag) {
+    if (typeof tag === 'string') {
+        return makeTag(tag);
+    }
+
+    return makeTag(
+        tag?.label || tag?.name || '',
+        tag?.bg_color || tag?.bgColor || '#1a3a1b',
+        tag?.text_color || tag?.textColor || '#ffffff'
+    );
+}
+
+function tagLabel(tag) {
+    return normalizeTag(tag).label;
+}
+
+function tagKey(tag) {
+    const normalized = normalizeTag(tag);
+    return `${normalized.label}-${normalized.bg_color}-${normalized.text_color}`;
+}
+
+function tagStyle(tag) {
+    const normalized = normalizeTag(tag);
+    return {
+        backgroundColor: normalized.bg_color,
+        color: normalized.text_color,
+        borderColor: normalized.bg_color,
+    };
+}
+
+function isTagSelected(label) {
+    return form.value.tags.some(tag => tagLabel(tag) === label);
+}
+
+function selectedTagByLabel(label) {
+    return form.value.tags.find(tag => tagLabel(tag) === label) || null;
+}
+
+function updateSelectedTagColor(colors) {
+    if (!form.value.tags.length) return;
+
+    const current = normalizeTag(form.value.tags[0]);
+    form.value.tags = [{
+        ...current,
+        ...colors,
+    }];
+}
+
 function toggleTag(tag) {
-    if (form.value.tags.includes(tag)) {
+    const normalized = normalizeTag(tag);
+    if (isTagSelected(normalized.label)) {
         form.value.tags = [];
     } else {
-        form.value.tags = [tag];
+        form.value.tags = [normalized];
+        customTagBgColor.value = normalized.bg_color;
+        customTagTextColor.value = normalized.text_color;
     }
 }
 
@@ -215,7 +322,15 @@ const formatCurrency = (val) => {
     return new Intl.NumberFormat('vi-VN').format(val) + 'đ';
 };
 
-const tagSuggestions = ['Best Seller', 'New', 'Ưu đãi', 'Giới hạn', 'Bán chạy', 'Món mới', 'Khuyến mãi'];
+const tagSuggestions = [
+    makeTag('Best Seller', '#ff7e5f', '#ffffff'),
+    makeTag('New', '#1a3a1b', '#ffffff'),
+    makeTag('Ưu đãi', '#10b981', '#ffffff'),
+    makeTag('Giới hạn', '#2563eb', '#ffffff'),
+    makeTag('Bán chạy', '#f59e0b', '#111827'),
+    makeTag('Món mới', '#7c3aed', '#ffffff'),
+    makeTag('Khuyến mãi', '#dc2626', '#ffffff'),
+];
 
 const availableSuggestions = computed(() => {
     return tagSuggestions;
@@ -289,9 +404,9 @@ const displayPrice = computed({
                             <td class="font-bold">{{ formatCurrency(item.price) }}</td>
                             <td>
                                 <div class="am-tags-list">
-                                    <span v-for="tag in item.tags" :key="tag" class="am-tag-badge" 
-                                          :class="tag.toLowerCase().replace(' ', '-')">
-                                        {{ tag.toUpperCase() }}
+                                    <span v-for="tag in item.tags" :key="tagKey(tag)" class="am-tag-badge"
+                                          :style="tagStyle(tag)">
+                                        {{ tagLabel(tag).toUpperCase() }}
                                     </span>
                                 </div>
                             </td>
@@ -320,11 +435,14 @@ const displayPrice = computed({
                         <button class="am-pagi-btn" :disabled="pagination.current_page === 1" @click="fetchMenu(pagination.current_page - 1)">
                             <ChevronLeft :size="18"/>
                         </button>
-                        <button v-for="p in pagination.last_page" :key="p" 
-                                class="am-pagi-btn" :class="{ active: p === pagination.current_page }"
-                                @click="fetchMenu(p)">
-                            {{ p }}
-                        </button>
+                        <template v-for="item in visiblePageItems" :key="item.key">
+                            <span v-if="item.type === 'ellipsis'" class="am-pagi-ellipsis">...</span>
+                            <button v-else
+                                    class="am-pagi-btn" :class="{ active: item.page === pagination.current_page }"
+                                    @click="fetchMenu(item.page)">
+                                {{ item.page }}
+                            </button>
+                        </template>
                         <button class="am-pagi-btn" :disabled="pagination.current_page === pagination.last_page" @click="fetchMenu(pagination.current_page + 1)">
                             <ChevronRight :size="18"/>
                         </button>
@@ -422,21 +540,31 @@ const displayPrice = computed({
                         <div class="am-field">
                             <label>Gắn thẻ (Tags)</label>
                             <div class="am-tags-edit">
-                                <span v-for="tag in form.tags" :key="tag" class="am-tag-removable">
-                                    {{ tag }} <X :size="12" @click="toggleTag(tag)" />
+                                <span v-for="tag in form.tags" :key="tagKey(tag)" class="am-tag-removable" :style="tagStyle(tag)">
+                                    {{ tagLabel(tag) }} <X :size="12" @click="toggleTag(tag)" />
                                 </span>
                             </div>
-                            <div class="am-tag-input-wrap">
+                            <div class="am-tag-builder">
                                 <input v-model="customTag" type="text" placeholder="Thêm thẻ mới..." @keyup.enter="addCustomTag" />
-                                <button @click="addCustomTag"><Plus :size="16"/></button>
+                                <div class="am-tag-builder-row">
+                                    <label class="am-color-picker" title="Màu nền tag">
+                                        <span>Nền</span>
+                                        <input v-model="selectedTagBgColor" type="color" />
+                                    </label>
+                                    <label class="am-color-picker" title="Màu chữ tag">
+                                        <span>Chữ</span>
+                                        <input v-model="selectedTagTextColor" type="color" />
+                                    </label>
+                                    <button class="am-tag-add-btn" @click="addCustomTag"><Plus :size="16"/></button>
+                                </div>
                             </div>
                             <div class="am-tag-suggestions">
                                 <span>GỢI Ý TỪ HỆ THỐNG</span>
                                 <div class="am-sugg-list">
-                                    <button v-for="t in availableSuggestions" :key="t" 
+                                    <button v-for="t in availableSuggestions" :key="tagKey(t)"
                                             @click="toggleTag(t)"
-                                            class="am-sugg-btn" :class="{ active: form.tags.includes(t) }">
-                                        {{ t }}
+                                            class="am-sugg-btn" :class="{ active: isTagSelected(tagLabel(t)) }">
+                                        {{ tagLabel(t) }}
                                     </button>
                                 </div>
                             </div>
@@ -550,6 +678,7 @@ const displayPrice = computed({
 .am-pagination { padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #e2e8f0; }
 .am-pagi-info { font-size: 0.9rem; color: #64748b; }
 .am-pagi-btns { display: flex; gap: 6px; }
+.am-pagi-ellipsis { width: 28px; height: 36px; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-weight: 800; }
 .am-pagi-btn { width: 36px; height: 36px; border-radius: 8px; border: 1px solid #e2e8f0; background: white; display: flex; align-items: center; justify-content: center; cursor: pointer; font-weight: 600; font-size: 0.9rem; }
 .am-pagi-btn.active { background: #1a3a1b; color: white; border-color: #1a3a1b; }
 .am-pagi-btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -639,34 +768,75 @@ input:checked + .slider:before { transform: translateX(24px); }
 .am-tag-removable svg { cursor: pointer; opacity: 0.7; }
 .am-tag-removable svg:hover { opacity: 1; }
 
-.am-tag-input-wrap {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 12px;
+.am-tag-builder {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 14px;
 }
-.am-tag-input-wrap input {
-    flex: 1;
-    padding: 8px 12px;
+.am-tag-builder > input {
+    width: 100%;
+    height: 42px;
+    padding: 0 12px;
     border-radius: 8px;
     border: 1.5px solid #e2e8f0;
     background: #f8fafc;
     font-size: 0.85rem;
     outline: none;
 }
-.am-tag-input-wrap button {
+.am-tag-builder-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 44px;
+    gap: 10px;
+    align-items: stretch;
+}
+.am-color-picker {
+    height: 42px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 8px;
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 0 10px;
+    color: #64748b;
+    font-size: 0.78rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+.am-color-picker input {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    flex: 0 0 auto;
+    appearance: none;
+    -webkit-appearance: none;
+}
+.am-color-picker input::-webkit-color-swatch-wrapper { padding: 0; }
+.am-color-picker input::-webkit-color-swatch { border: 1px solid rgba(15, 23, 42, 0.16); border-radius: 8px; }
+.am-color-picker input::-moz-color-swatch { border: 1px solid rgba(15, 23, 42, 0.16); border-radius: 8px; }
+.am-tag-add-btn {
+    width: 44px;
+    height: 42px;
     background: #1a3a1b;
     color: white;
     border: none;
     border-radius: 8px;
-    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
 }
 
 .am-tag-suggestions { background: #f8fafc; border-radius: 12px; padding: 16px; }
 .am-no-sugg { font-size: 0.85rem; color: #94a3b8; font-style: italic; }
-.am-tag-suggestions span { font-size: 0.75rem; font-weight: 700; color: #94a3b8; display: block; margin-bottom: 10px; }
-.am-sugg-btn { padding: 6px 12px; border-radius: 8px; border: 1px solid #e2e8f0; background: white; font-size: 0.85rem; font-weight: 600; color: #475569; cursor: pointer; transition: 0.2s; }
-.am-sugg-btn.active { background: #1a3a1b; color: white; border-color: #1a3a1b; }
+.am-tag-suggestions > span { font-size: 0.75rem; font-weight: 700; color: #94a3b8; display: block; margin-bottom: 10px; }
+.am-sugg-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: center; }
+.am-sugg-btn { padding: 8px 14px; border-radius: 10px; border: 1px solid #e2e8f0; background: white; font-size: 0.85rem; font-weight: 600; color: #475569; cursor: pointer; transition: 0.2s; line-height: 1.2; display: inline-flex; align-items: center; gap: 8px; }
+.am-sugg-btn.active { background: white; color: #1a3a1b; border-color: #1a3a1b; box-shadow: 0 0 0 1px #1a3a1b inset; }
 .am-sugg-btn:hover:not(.active) { background: #f1f5f9; }
 
 

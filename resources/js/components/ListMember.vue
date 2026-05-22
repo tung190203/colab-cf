@@ -41,6 +41,30 @@ const paginatedListMember = computed(() => {
   const end = start + itemsPerPage;
   return filteredListMember.value.slice(start, end);
 });
+const visiblePageItems = computed(() => buildPageItems(currentPage.value, totalPages.value));
+
+function buildPageItems(current, total) {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, index) => ({ type: 'page', page: index + 1, key: `page-${index + 1}` }));
+  }
+
+  const pages = new Set([1, total, current - 1, current, current + 1]);
+  if (current <= 3) [2, 3, 4].forEach(page => pages.add(page));
+  if (current >= total - 2) [total - 3, total - 2, total - 1].forEach(page => pages.add(page));
+
+  const sortedPages = [...pages].filter(page => page >= 1 && page <= total).sort((a, b) => a - b);
+  const items = [];
+
+  sortedPages.forEach((page, index) => {
+    const previous = sortedPages[index - 1];
+    if (index > 0 && page - previous > 1) {
+      items.push({ type: 'ellipsis', key: `ellipsis-${previous}-${page}` });
+    }
+    items.push({ type: 'page', page, key: `page-${page}` });
+  });
+
+  return items;
+}
 
 const showEditModal = ref(false);
 const editMemberData = ref({ id: null, name: '', phone: '', note: '', role: '', image_url: null });
@@ -233,7 +257,10 @@ onMounted(getListMember);
       <!-- Pagination -->
       <div v-if="totalPages > 1" class="ml-pagination">
           <button :disabled="currentPage === 1" @click="goToPage(currentPage - 1)">←</button>
-          <button v-for="p in totalPages" :key="p" :class="{ active: currentPage === p }" @click="goToPage(p)">{{ p }}</button>
+          <template v-for="item in visiblePageItems" :key="item.key">
+              <span v-if="item.type === 'ellipsis'" class="ml-page-ellipsis">...</span>
+              <button v-else :class="{ active: currentPage === item.page }" @click="goToPage(item.page)">{{ item.page }}</button>
+          </template>
           <button :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)">→</button>
       </div>
     </div>
@@ -398,6 +425,7 @@ onMounted(getListMember);
 .ml-btn-del:hover { background: #dc2626; color: white; }
 
 .ml-pagination { display: flex; justify-content: center; gap: 8px; margin-top: 30px; }
+.ml-page-ellipsis { width: 28px; height: 36px; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-weight: 800; }
 .ml-pagination button { width: 36px; height: 36px; border-radius: 10px; border: 1px solid #e0e6ed; background: white; font-weight: 700; cursor: pointer; color: #666; }
 .ml-pagination button.active { background: #2D4F1E; color: white; border-color: #2D4F1E; }
 .ml-pagination button:disabled { opacity: 0.4; cursor: not-allowed; }

@@ -62,6 +62,30 @@ const paginatedBookings = computed(() => {
     const start = (currentPage.value - 1) * itemsPerPage;
     return bookings.value.slice(start, start + itemsPerPage);
 });
+const visiblePageItems = computed(() => buildPageItems(currentPage.value, totalPages.value));
+
+function buildPageItems(current, total) {
+    if (total <= 7) {
+        return Array.from({ length: total }, (_, index) => ({ type: 'page', page: index + 1, key: `page-${index + 1}` }));
+    }
+
+    const pages = new Set([1, total, current - 1, current, current + 1]);
+    if (current <= 3) [2, 3, 4].forEach(page => pages.add(page));
+    if (current >= total - 2) [total - 3, total - 2, total - 1].forEach(page => pages.add(page));
+
+    const sortedPages = [...pages].filter(page => page >= 1 && page <= total).sort((a, b) => a - b);
+    const items = [];
+
+    sortedPages.forEach((page, index) => {
+        const previous = sortedPages[index - 1];
+        if (index > 0 && page - previous > 1) {
+            items.push({ type: 'ellipsis', key: `ellipsis-${previous}-${page}` });
+        }
+        items.push({ type: 'page', page, key: `page-${page}` });
+    });
+
+    return items;
+}
 
 function openModal(booking) {
     selectedBooking.value = booking;
@@ -219,7 +243,10 @@ function getInitials(name) {
                         </div>
                         <div class="ao-pag-controls">
                             <button :disabled="currentPage === 1" @click="currentPage--">&lt;</button>
-                            <button v-for="p in totalPages" :key="p" :class="{ active: p === currentPage }" @click="currentPage = p">{{ p }}</button>
+                            <template v-for="item in visiblePageItems" :key="item.key">
+                                <span v-if="item.type === 'ellipsis'" class="ao-pag-ellipsis">...</span>
+                                <button v-else :class="{ active: item.page === currentPage }" @click="currentPage = item.page">{{ item.page }}</button>
+                            </template>
                             <button :disabled="currentPage === totalPages" @click="currentPage++">&gt;</button>
                         </div>
                     </div>
@@ -538,6 +565,16 @@ function getInitials(name) {
 .ao-pag-controls {
     display: flex;
     gap: 8px;
+}
+
+.ao-pag-ellipsis {
+    width: 28px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    font-weight: 800;
 }
 
 .ao-pag-controls button {

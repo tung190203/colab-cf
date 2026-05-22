@@ -32,6 +32,31 @@ const paginatedBookingList = computed(() => {
   return bookingList.value.slice(start, start + itemsPerPage);
 });
 
+const visiblePageItems = computed(() => buildPageItems(currentPage.value, totalPages.value));
+
+function buildPageItems(current, total) {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, index) => ({ type: 'page', page: index + 1, key: `page-${index + 1}` }));
+  }
+
+  const pages = new Set([1, total, current - 1, current, current + 1]);
+  if (current <= 3) [2, 3, 4].forEach(page => pages.add(page));
+  if (current >= total - 2) [total - 3, total - 2, total - 1].forEach(page => pages.add(page));
+
+  const sortedPages = [...pages].filter(page => page >= 1 && page <= total).sort((a, b) => a - b);
+  const items = [];
+
+  sortedPages.forEach((page, index) => {
+    const previous = sortedPages[index - 1];
+    if (index > 0 && page - previous > 1) {
+      items.push({ type: 'ellipsis', key: `ellipsis-${previous}-${page}` });
+    }
+    items.push({ type: 'page', page, key: `page-${page}` });
+  });
+
+  return items;
+}
+
 // Modal logic
 function openModal(booking) {
   selectedBooking.value = booking;
@@ -181,12 +206,15 @@ onUnmounted(() => {
         <button :disabled="currentPage === 1" @click="goToPage(currentPage - 1)" class="nb-page-btn">
             <ChevronLeft :size="18" />
         </button>
-        <button 
-          v-for="p in totalPages" :key="p" 
-          @click="goToPage(p)" 
+        <template v-for="item in visiblePageItems" :key="item.key">
+        <span v-if="item.type === 'ellipsis'" class="nb-page-ellipsis">...</span>
+        <button
+          v-else
+          @click="goToPage(item.page)"
           class="nb-page-btn" 
-          :class="{ active: currentPage === p }"
-        >{{ p }}</button>
+          :class="{ active: currentPage === item.page }"
+        >{{ item.page }}</button>
+        </template>
         <button :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)" class="nb-page-btn">
             <ChevronRight :size="18" />
         </button>
@@ -328,6 +356,7 @@ onUnmounted(() => {
 .nb-price { font-weight: 800; color: #1a1a2e; font-size: 1rem; }
 
 .nb-pagination { display: flex; justify-content: center; gap: 8px; margin-top: 40px; }
+.nb-page-ellipsis { width: 28px; height: 38px; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-weight: 800; }
 .nb-page-btn {
     width: 38px; height: 38px; border-radius: 10px; border: 1px solid #e0e6ed;
     background: white; cursor: pointer; font-weight: 700; color: #666; transition: all 0.2s;

@@ -68,26 +68,24 @@ class BookingController extends Controller
 
         // Tính tổng tiền
         $package = Package::where('is_active', true)->findOrFail($validated['package_id']);
-        $total = $package->price;
+        $hasExtras = !empty($validated['extras']);
+        $selectedExtras = collect($validated['extras'] ?? [])
+            ->map(fn($srv) => Extra::find($srv['id']))
+            ->filter();
+        $hasPaidExtras = $selectedExtras->contains(fn($extra) => (int) $extra->price > 0);
+        $hasZeroPriceExtras = $selectedExtras->contains(fn($extra) => (int) $extra->price === 0);
+        $useExtraOnlyPricing = $hasPaidExtras && !$hasZeroPriceExtras;
+        $total = $useExtraOnlyPricing ? 0 : $package->price;
         $serviceQuantities = [];
-        $freeDrinksLeft = (int) ($package->free_drinks_count ?? 0);
-        $freeDrinkExcludedCategories = ['desserts', 'services', 'office_services', 'other_services'];
 
-        if (!empty($validated['extras'])) {
+        if ($hasExtras) {
             foreach ($validated['extras'] as $srv) {
                 $extra = Extra::find($srv['id']);
                 if ($extra) {
                     $quantity = (int) $srv['quantity'];
-                    $requestedFree = isset($srv['free_applied']) ? (int) $srv['free_applied'] : 0;
                     $freeApplied = 0;
 
-                    if (!in_array($extra->category, $freeDrinkExcludedCategories, true)) {
-                        $freeApplied = min($quantity, $requestedFree, $freeDrinksLeft);
-                        $freeDrinksLeft -= $freeApplied;
-                    }
-
-                    // Giá sau khi trừ free
-                    $lineTotal = max(0, ($quantity - $freeApplied)) * $extra->price;
+                    $lineTotal = $useExtraOnlyPricing ? $quantity * $extra->price : 0;
                     $total += $lineTotal;
 
                     $serviceQuantities[$srv['id']] = [

@@ -235,13 +235,27 @@ const extras = computed(() => {
   return list;
 });
 
+const usesExtraOnlyPricing = computed(() => {
+  const hasPaidExtras = extras.value.some((e) => Number(e.price || 0) > 0);
+  const hasZeroPriceExtras = extras.value.some((e) => Number(e.price || 0) === 0);
+  return hasPaidExtras && !hasZeroPriceExtras;
+});
+
+function extraLinePrice(e) {
+  if (usesExtraOnlyPricing.value) {
+    return e.price * (e.quantity || 1);
+  }
+
+  return 0;
+}
+
 const total = computed(() => {
   let s = 0;
-  if (selectedPackage.value) {
+  if (selectedPackage.value && !usesExtraOnlyPricing.value) {
     s += selectedPackage.value.price;
   }
   extras.value.forEach((e) => {
-    s += e.totalPrice ?? e.price * (e.quantity || 1);
+    s += extraLinePrice(e);
   });
 
   return s;
@@ -542,6 +556,8 @@ export function useBooking() {
     toggleExtra,
     updateQuantity,
     extras,
+    usesExtraOnlyPricing,
+    extraLinePrice,
     total,
     endTime,
     resetAll,

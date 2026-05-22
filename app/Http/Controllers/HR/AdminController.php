@@ -383,6 +383,186 @@ class AdminController extends Controller
         return response()->json(['message' => 'Lưu bảng lương thành công', 'payroll' => $payroll]);
     }
 
+    public function getAttendance(Request $request)
+    {
+        $request->validate([
+            'month' => 'nullable|integer|between:1,12',
+            'year' => 'nullable|integer|min:2000|max:2100',
+            'staff_id' => 'nullable|exists:users,id',
+        ]);
+
+        $month = (int) $request->query('month', now()->month);
+        $year = (int) $request->query('year', now()->year);
+        $staffId = $request->query('staff_id');
+        $today = now()->format('Y-m-d');
+
+        $schedules = StaffSchedule::with('staff:id,name,image,role')
+            ->whereMonth('date', $month)
+            ->whereYear('date', $year)
+            ->when($staffId, fn($query) => $query->where('staff_id', $staffId))
+            ->whereHas('staff', fn($query) => $query->whereIn('role', ['staff', 'shift_leader']))
+            ->orderByDesc('date')
+            ->orderBy('staff_id')
+            ->get();
+
+        $attendances = Attendance::whereMonth('date', $month)
+            ->whereYear('date', $year)
+            ->when($staffId, fn($query) => $query->where('staff_id', $staffId))
+            ->get()
+            ->keyBy(fn($item) => $item->staff_id . '_' . $item->date->format('Y-m-d') . '_' . $item->shift);
+
+        $records = $schedules
+            ->filter(fn($schedule) => $schedule->date->format('Y-m-d') <= $today)
+            ->map(function ($schedule) use ($attendances) {
+                $date = $schedule->date->format('Y-m-d');
+                $attendance = $attendances->get($schedule->staff_id . '_' . $date . '_' . $schedule->shift);
+
+                return [
+                    'id' => $schedule->id . '_admin_attendance',
+                    'staff_id' => $schedule->staff_id,
+                    'staff_name' => $schedule->staff?->name,
+                    'staff_role' => $schedule->staff?->role,
+                    'staff_image_url' => $schedule->staff?->image_url,
+                    'date' => $date,
+                    'shift' => $schedule->shift,
+                    'check_in_at' => $attendance?->check_in_at,
+                    'check_out_at' => $attendance?->check_out_at,
+                    'note' => $attendance?->note,
+                ];
+            })
+            ->values();
+
+        return response()->json($records);
+    }
+
+    public function getCustomerStats(Request $request)
+    {
+        if ($request->user()->role !== 'admin') {
+            return response()->json(['message' => 'Chỉ admin được xem thống kê khách hàng'], 403);
+        }
+
+        $request->validate([
+            'month' => 'nullable|integer|between:1,12',
+            'year' => 'nullable|integer|min:2000|max:2100',
+        ]);
+
+        $month = (int) $request->query('month', now()->month);
+        $year = (int) $request->query('year', now()->year);
+        $period = Carbon::create($year, $month, 1);
+        $start = $period->copy()->startOfMonth();
+        $end = $period->copy()->endOfMonth();
+
+        $memberRoles = ['member', 'vip'];
+        $baseBookingQuery = Booking::query()
+            ->whereBetween('start_time', [$start, $end])
+            ->where('status', '!=', 'cancelled');
+
+        $totalMembers = User::whereIn('role', $memberRoles)->count();
+        $vipMembers = User::where('role', 'vip')->count();
+        $newMembers = User::whereIn('role', $memberRoles)
+            ->whereBetween('created_at', [$start, $end])
+            ->count();
+
+        $totalBookings = (clone $baseBookingQuery)->count();
+        $revenue = (int) (clone $baseBookingQuery)->sum('total_price');
+        $activeCustomers = (clone $baseBookingQuery)
+            ->whereNotNull('phone')
+            ->distinct('phone')
+            ->count('phone');
+        $avgOrderValue = $totalBookings > 0 ? (int) round($revenue / $totalBookings) : 0;
+
+        $returningCustomers = Booking::query()
+            ->where('status', '!=', 'cancelled')
+            ->whereNotNull('phone')
+            ->select('phone', DB::raw('COUNT(*) as orders_count'))
+            ->groupBy('phone')
+            ->having('orders_count', '>', 1)
+            ->get()
+            ->count();
+
+        $memberBreakdown = User::whereIn('role', $memberRoles)
+            ->select('role', DB::raw('COUNT(*) as total'))
+            ->groupBy('role')
+            ->pluck('total', 'role');
+
+        $topCustomers = (clone $baseBookingQuery)
+            ->whereNotNull('phone')
+            ->select(
+                'phone',
+                DB::raw('MAX(full_name) as name'),
+                DB::raw('COUNT(*) as orders_count'),
+                DB::raw('SUM(total_price) as total_spent'),
+                DB::raw('MAX(start_time) as last_booking_at')
+            )
+            ->groupBy('phone')
+            ->orderByDesc('total_spent')
+            ->limit(8)
+            ->get()
+            ->map(fn($customer) => [
+                'name' => $customer->name,
+                'phone' => $customer->phone,
+                'orders_count' => (int) $customer->orders_count,
+                'total_spent' => (int) $customer->total_spent,
+                'last_booking_at' => $customer->last_booking_at,
+                'is_member' => User::where('phone', $customer->phone)
+                    ->whereIn('role', $memberRoles)
+                    ->exists(),
+            ]);
+
+        $topPackages = (clone $baseBookingQuery)
+            ->join('packages', 'bookings.package_id', '=', 'packages.id')
+            ->select(
+                'packages.name',
+                DB::raw('COUNT(*) as bookings_count'),
+                DB::raw('SUM(bookings.total_price) as revenue')
+            )
+            ->groupBy('packages.id', 'packages.name')
+            ->orderByDesc('bookings_count')
+            ->limit(5)
+            ->get()
+            ->map(fn($package) => [
+                'name' => $package->name,
+                'bookings_count' => (int) $package->bookings_count,
+                'revenue' => (int) $package->revenue,
+            ]);
+
+        $monthlyTrend = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $date = $period->copy()->subMonths($i);
+            $monthStart = $date->copy()->startOfMonth();
+            $monthEnd = $date->copy()->endOfMonth();
+            $query = Booking::whereBetween('start_time', [$monthStart, $monthEnd])
+                ->where('status', '!=', 'cancelled');
+
+            $monthlyTrend[] = [
+                'label' => $date->format('m/Y'),
+                'customers' => (clone $query)->whereNotNull('phone')->distinct('phone')->count('phone'),
+                'bookings' => (clone $query)->count(),
+                'revenue' => (int) (clone $query)->sum('total_price'),
+            ];
+        }
+
+        return response()->json([
+            'summary' => [
+                'total_members' => $totalMembers,
+                'vip_members' => $vipMembers,
+                'new_members' => $newMembers,
+                'active_customers' => $activeCustomers,
+                'returning_customers' => $returningCustomers,
+                'total_bookings' => $totalBookings,
+                'revenue' => $revenue,
+                'avg_order_value' => $avgOrderValue,
+            ],
+            'member_breakdown' => [
+                'member' => (int) ($memberBreakdown['member'] ?? 0),
+                'vip' => (int) ($memberBreakdown['vip'] ?? 0),
+            ],
+            'top_customers' => $topCustomers,
+            'top_packages' => $topPackages,
+            'monthly_trend' => $monthlyTrend,
+        ]);
+    }
+
     public function getShifts()
     {
         return response()->json(Shift::all());

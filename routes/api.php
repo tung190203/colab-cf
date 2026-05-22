@@ -43,6 +43,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('/admin/payroll', [AdminController::class, 'getPayroll']);
         Route::post('/admin/payroll', [AdminController::class, 'savePayroll']);
+        Route::get('/admin/attendance', [AdminController::class, 'getAttendance']);
 
         // Menu Management
         Route::get('/admin/menu', [MenuController::class, 'index']);
@@ -63,6 +64,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::post('/admin/schedule', [AdminController::class, 'saveSchedule']);
         Route::delete('/admin/schedule/{id}', [AdminController::class, 'deleteSchedule']);
+
+        Route::get('/admin/customer-stats', [AdminController::class, 'getCustomerStats']);
     });
 
     // Staff & Admin

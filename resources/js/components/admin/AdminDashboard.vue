@@ -10,7 +10,8 @@ import {
     Clock, 
     ArrowRight,
     Coffee,
-    CheckCircle2
+    CheckCircle2,
+    FileClock
 } from 'lucide-vue-next';
 
 const { adminUser, authHeader, isAdmin, isShiftLeader } = useAdminAuth();
@@ -226,6 +227,11 @@ const greeting = computed(() => {
                         <router-link to="/admin/schedule" class="db-action-btn">
                             <div class="db-ab-icon"><Clock :size="20"/></div>
                             <span>Phân lịch làm việc</span>
+                            <ArrowRight :size="18" />
+                        </router-link>
+                        <router-link v-if="isAdmin()" to="/admin/audit-logs" class="db-action-btn">
+                            <div class="db-ab-icon"><FileClock :size="20"/></div>
+                            <span>Xem audit log chấm công</span>
                             <ArrowRight :size="18" />
                         </router-link>
                     </template>

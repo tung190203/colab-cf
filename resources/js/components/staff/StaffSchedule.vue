@@ -126,6 +126,22 @@ function getSchedulesForDay(date) {
     return schedules.value.filter(s => toDateStr(s.date) === ds);
 }
 
+function getShiftSchedulesForDay(date, shiftKey) {
+    return getSchedulesForDay(date).filter(s => s.shift === shiftKey);
+}
+
+function formatScheduleNames(items) {
+    return items.map(s => {
+        const label = s.is_holiday ? 'Lễ' : (s.is_ot ? 'OT' : '');
+        return `${s.staff?.name || 'Nhân viên'}${label ? ` (${label} ${formatOtMultiplier(s.ot_multiplier)})` : ''}`;
+    }).join(', ');
+}
+
+function formatOtMultiplier(value) {
+    const n = Number(value || 2);
+    return `x${Number.isInteger(n) ? n : n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}`;
+}
+
 const showModal = ref(false);
 const modalDate = ref(null);
 
@@ -143,6 +159,19 @@ const hasShift = (staffId, date, key) => {
         Number(s.staff_id) === Number(staffId)
     );
 };
+
+const getSchedule = (staffId, date, key) => {
+    const ds = toDateStr(date);
+    return schedules.value.find(s =>
+        toDateStr(s.date) === ds &&
+        s.shift === key &&
+        Number(s.staff_id) === Number(staffId)
+    );
+};
+
+const isShiftOt = (staffId, date, key) => Boolean(getSchedule(staffId, date, key)?.is_ot);
+const isShiftHoliday = (staffId, date, key) => Boolean(getSchedule(staffId, date, key)?.is_holiday);
+const getShiftOtMultiplier = (staffId, date, key) => getSchedule(staffId, date, key)?.ot_multiplier;
 
 const employeesOnly = computed(() => {
     return staff.value.filter(s => s.role === 'staff' || s.role === 'shift_leader');
@@ -187,12 +216,12 @@ const employeesOnly = computed(() => {
                             <div class="day-shifts-summary">
                                 <template v-for="shift in SHIFTS" :key="shift.key">
                                     <div 
-                                        v-if="getSchedulesForDay(day.date).filter(s => s.shift === shift.key).length > 0" 
+                                        v-if="getShiftSchedulesForDay(day.date, shift.key).length > 0" 
                                         class="shift-names-row"
                                     >
                                         <span class="sn-label" :style="{ color: shift.color }">{{ shift.short }}:</span>
                                         <span class="sn-list">
-                                            {{ getSchedulesForDay(day.date).filter(s => s.shift === shift.key).map(s => s.staff?.name).join(', ') }}
+                                            {{ formatScheduleNames(getShiftSchedulesForDay(day.date, shift.key)) }}
                                         </span>
                                     </div>
                                 </template>
@@ -233,7 +262,7 @@ const employeesOnly = computed(() => {
                                             <span class="scp-time">{{ shift.time }}</span>
                                         </div>
                                         <div class="scp-count">
-                                            {{ getSchedulesForDay(modalDate).filter(s => s.shift === shift.key).length }} nv
+                                            {{ getShiftSchedulesForDay(modalDate, shift.key).length }} nv
                                         </div>
                                     </div>
                                     <div class="scp-staff-list">
@@ -247,8 +276,12 @@ const employeesOnly = computed(() => {
                                                 <span v-else>{{ s.name?.charAt(0)?.toUpperCase() }}</span>
                                             </div>
                                             <div class="sri-info">
-                                                <span class="sri-name">{{ s.name }}</span>
-                                                <span class="sri-status">Đã phân công</span>
+                                                <span class="sri-name">
+                                                    {{ s.name }}
+                                                    <span v-if="isShiftHoliday(s.id, modalDate, shift.key)" class="ot-badge">Lễ {{ formatOtMultiplier(getShiftOtMultiplier(s.id, modalDate, shift.key)) }}</span>
+                                                    <span v-else-if="isShiftOt(s.id, modalDate, shift.key)" class="ot-badge">OT {{ formatOtMultiplier(getShiftOtMultiplier(s.id, modalDate, shift.key)) }}</span>
+                                                </span>
+                                                <span class="sri-status">{{ isShiftHoliday(s.id, modalDate, shift.key) ? `Ca lễ ${formatOtMultiplier(getShiftOtMultiplier(s.id, modalDate, shift.key))}` : (isShiftOt(s.id, modalDate, shift.key) ? `Ca OT ${formatOtMultiplier(getShiftOtMultiplier(s.id, modalDate, shift.key))}` : 'Đã phân công') }}</span>
                                             </div>
                                             <div class="sri-toggle">
                                                 <div class="toggle-track">
@@ -258,7 +291,7 @@ const employeesOnly = computed(() => {
                                                 </div>
                                             </div>
                                         </div>
-                                        <div v-if="getSchedulesForDay(modalDate).filter(s => s.shift === shift.key).length === 0" class="empty-state-mini">
+                                        <div v-if="getShiftSchedulesForDay(modalDate, shift.key).length === 0" class="empty-state-mini">
                                             Chưa có nhân sự được phân công
                                         </div>
                                     </div>
@@ -450,12 +483,28 @@ const employeesOnly = computed(() => {
     flex: 1;
     display: flex;
     flex-direction: column;
+    min-width: 0;
 }
 
 .sri-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-weight: 700;
     font-size: 0.95rem;
     color: #1e293b;
+}
+
+.ot-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: #fffbeb;
+    color: #92400e;
+    border: 1px solid #fbbf24;
+    font-size: 0.65rem;
+    font-weight: 900;
 }
 
 .sri-status {

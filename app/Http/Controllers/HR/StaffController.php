@@ -188,21 +188,7 @@ class StaffController extends Controller
             $payroll = null; // Ẩn hoàn toàn với nhân viên nếu chưa duyệt
         }
 
-        // Tính số giờ làm từ bảng attendance
-        $attendances = Attendance::where('staff_id', $user->id)
-            ->whereMonth('date', $month)
-            ->whereYear('date', $year)
-            ->whereNotNull('check_in_at')
-            ->whereNotNull('check_out_at')
-            ->get();
-
-        $workedHours = 0;
-        foreach ($attendances as $att) {
-            $checkIn = Carbon::parse($att->check_in_at);
-            $checkOut = Carbon::parse($att->check_out_at);
-            $workedHours += round(abs($checkOut->diffInMinutes($checkIn, false)) / 60, 2);
-        }
-        $workedHours = round($workedHours, 2);
+        $workedHours = $payroll ? round((float) $payroll->worked_hours, 2) : 0;
 
         return response()->json([
             'payroll'      => $payroll,

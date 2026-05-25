@@ -44,6 +44,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/admin/payroll', [AdminController::class, 'getPayroll']);
         Route::post('/admin/payroll', [AdminController::class, 'savePayroll']);
         Route::get('/admin/attendance', [AdminController::class, 'getAttendance']);
+        Route::post('/admin/attendance', [AdminController::class, 'saveAttendance']);
+        Route::get('/admin/audit-logs', [AdminController::class, 'getAuditLogs'])->middleware('role:admin');
 
         // Menu Management
         Route::get('/admin/menu', [MenuController::class, 'index']);

@@ -15,6 +15,20 @@ const records = ref([]);
 const staff = ref([]);
 const shifts = ref([]);
 const loading = ref(true);
+const saving = ref(false);
+const editModal = ref(false);
+const editForm = ref({
+    staff_id: null,
+    staff_name: '',
+    date: '',
+    shift: '',
+    shift_start_time: '',
+    shift_end_time: '',
+    is_special_shift: false,
+    check_in_time: '',
+    check_out_time: '',
+    note: '',
+});
 
 const years = computed(() => {
     const year = now.getFullYear();
@@ -73,6 +87,12 @@ function formatTime(value) {
     return new Date(value).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 }
 
+function toTimeInput(value) {
+    if (!value) return '';
+    const d = new Date(value);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 function formatDate(value) {
     const date = new Date(value);
     return date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -93,11 +113,59 @@ function statusOf(record) {
     return { text: 'Vắng mặt', className: 'absent' };
 }
 
+function openEdit(record) {
+    editForm.value = {
+        staff_id: record.staff_id,
+        staff_name: record.staff_name,
+        date: record.date,
+        shift: record.shift,
+        shift_start_time: record.shift_start_time || '',
+        shift_end_time: record.shift_end_time || '',
+        is_special_shift: Boolean(record.is_ot || record.is_holiday),
+        check_in_time: toTimeInput(record.check_in_at),
+        check_out_time: toTimeInput(record.check_out_at),
+        note: record.note || '',
+    };
+    editModal.value = true;
+}
+
+function clampTimeToShift(field) {
+    if (editForm.value.is_special_shift || !editForm.value[field]) return;
+    if (editForm.value.shift_start_time && editForm.value[field] < editForm.value.shift_start_time) {
+        editForm.value[field] = editForm.value.shift_start_time;
+    }
+    if (editForm.value.shift_end_time && editForm.value[field] > editForm.value.shift_end_time) {
+        editForm.value[field] = editForm.value.shift_end_time;
+    }
+}
+
+async function saveAttendance() {
+    saving.value = true;
+    try {
+        await axios.post('/api/admin/attendance', {
+            staff_id: editForm.value.staff_id,
+            date: editForm.value.date,
+            shift: editForm.value.shift,
+            check_in_time: editForm.value.check_in_time || null,
+            check_out_time: editForm.value.check_out_time || null,
+            note: editForm.value.note || null,
+        }, { headers: authHeader() });
+
+        toast.success('Đã cập nhật chấm công');
+        editModal.value = false;
+        await fetchAttendance();
+    } catch (e) {
+        toast.error(e.response?.data?.message || 'Không thể cập nhật chấm công');
+    } finally {
+        saving.value = false;
+    }
+}
+
 const workedShifts = computed(() => records.value.filter(item => item.check_in_at).length);
 const absentShifts = computed(() => records.value.filter(item => !item.check_in_at).length);
 const incompleteShifts = computed(() => records.value.filter(item => item.check_in_at && !item.check_out_at).length);
 const totalHours = computed(() => {
-    const sum = records.value.reduce((total, item) => total + calcHours(item.check_in_at, item.check_out_at), 0);
+    const sum = records.value.reduce((total, item) => total + Number(item.payable_hours || 0), 0);
     return sum.toFixed(1);
 });
 </script>
@@ -177,11 +245,12 @@ const totalHours = computed(() => {
                                 <th>Giờ ra</th>
                                 <th>Số giờ</th>
                                 <th>Trạng thái</th>
+                                <th>Thao tác</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr v-if="records.length === 0">
-                                <td colspan="7" class="aa-empty">Chưa có dữ liệu chấm công.</td>
+                                <td colspan="8" class="aa-empty">Chưa có dữ liệu chấm công.</td>
                             </tr>
                             <tr v-for="record in records" :key="record.id">
                                 <td>
@@ -198,11 +267,14 @@ const totalHours = computed(() => {
                                 <td>{{ getShiftName(record.shift) }}</td>
                                 <td>{{ formatTime(record.check_in_at) }}</td>
                                 <td>{{ formatTime(record.check_out_at) }}</td>
-                                <td>{{ displayHours(record.check_in_at, record.check_out_at) }}</td>
+                                <td>{{ Number(record.payable_hours || 0).toFixed(1) }}</td>
                                 <td>
                                     <span class="aa-badge" :class="statusOf(record).className">
                                         {{ statusOf(record).text }}
                                     </span>
+                                </td>
+                                <td>
+                                    <button class="aa-edit-btn" @click="openEdit(record)">Sửa công</button>
                                 </td>
                             </tr>
                         </tbody>
@@ -210,6 +282,69 @@ const totalHours = computed(() => {
                 </div>
             </div>
         </div>
+
+        <Teleport to="body">
+            <div v-if="editModal" class="aa-modal-overlay" @click.self="editModal = false">
+                <div class="aa-modal">
+                    <div class="aa-modal-header">
+                        <div>
+                            <h3>Sửa chấm công</h3>
+                            <p>{{ editForm.staff_name }} - {{ formatDate(editForm.date) }} - {{ getShiftName(editForm.shift) }}</p>
+                        </div>
+                        <button @click="editModal = false">×</button>
+                    </div>
+
+                    <div class="aa-modal-body">
+                        <div class="aa-shift-detail">
+                            <div>
+                                <span>Khung giờ ca</span>
+                                <strong>{{ editForm.shift_start_time || '--:--' }} - {{ editForm.shift_end_time || '--:--' }}</strong>
+                            </div>
+                            <div>
+                                <span>Loại ca</span>
+                                <strong>{{ editForm.is_special_shift ? 'OT / Lễ' : 'Ca thường' }}</strong>
+                            </div>
+                        </div>
+                        <div class="aa-form-row">
+                            <div class="aa-field">
+                                <label>Giờ vào</label>
+                                <input
+                                    v-model="editForm.check_in_time"
+                                    type="time"
+                                    :min="editForm.is_special_shift ? null : editForm.shift_start_time"
+                                    :max="editForm.is_special_shift ? null : editForm.shift_end_time"
+                                    @change="clampTimeToShift('check_in_time')"
+                                />
+                            </div>
+                            <div class="aa-field">
+                                <label>Giờ ra</label>
+                                <input
+                                    v-model="editForm.check_out_time"
+                                    type="time"
+                                    :min="editForm.is_special_shift ? null : editForm.shift_start_time"
+                                    :max="editForm.is_special_shift ? null : editForm.shift_end_time"
+                                    @change="clampTimeToShift('check_out_time')"
+                                />
+                            </div>
+                        </div>
+                        <div v-if="!editForm.is_special_shift" class="aa-time-hint">
+                            Chỉ được sửa trong khung ca {{ editForm.shift_start_time }} - {{ editForm.shift_end_time }}.
+                        </div>
+                        <div class="aa-field">
+                            <label>Ghi chú chỉnh sửa</label>
+                            <textarea v-model="editForm.note" rows="3" placeholder="Ví dụ: Nhân viên quên check-in, đã xác nhận qua camera"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="aa-modal-footer">
+                        <button class="aa-btn-cancel" @click="editModal = false">Hủy</button>
+                        <button class="aa-btn-save" @click="saveAttendance" :disabled="saving">
+                            {{ saving ? 'Đang lưu...' : 'Lưu chấm công' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Teleport>
     </AdminLayout>
 </template>
 
@@ -442,10 +577,209 @@ const totalHours = computed(() => {
     color: #dc2626;
 }
 
+.aa-edit-btn {
+    border: 1px solid #dbe3ea;
+    background: #ffffff;
+    color: #1f2937;
+    border-radius: 9px;
+    padding: 8px 12px;
+    font-weight: 800;
+    font-size: 0.8rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.aa-edit-btn:hover {
+    border-color: #2D4F1E;
+    color: #2D4F1E;
+    background: #f8fafc;
+}
+
 .aa-empty {
     text-align: center;
     color: #94a3b8;
     padding: 42px 16px !important;
+}
+
+.aa-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    background: rgba(15, 23, 42, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.aa-modal {
+    width: 100%;
+    max-width: 480px;
+    background: #ffffff;
+    border-radius: 18px;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+    overflow: hidden;
+}
+
+.aa-modal-header {
+    padding: 20px 22px;
+    border-bottom: 1px solid #edf2f7;
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.aa-modal-header h3 {
+    margin: 0;
+    color: #111827;
+    font-size: 1.05rem;
+}
+
+.aa-modal-header p {
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 0.85rem;
+}
+
+.aa-modal-header button {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 9px;
+    background: #f1f5f9;
+    color: #64748b;
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.aa-modal-body {
+    padding: 22px;
+}
+
+.aa-shift-detail {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.aa-shift-detail > div {
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    border-radius: 12px;
+    padding: 12px;
+}
+
+.aa-shift-detail span {
+    display: block;
+    color: #64748b;
+    font-size: 0.74rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+}
+
+.aa-shift-detail strong {
+    display: block;
+    color: #111827;
+    font-size: 0.95rem;
+    font-weight: 900;
+}
+
+.aa-form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+}
+
+.aa-field {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin-bottom: 16px;
+}
+
+.aa-field:last-child {
+    margin-bottom: 0;
+}
+
+.aa-field label {
+    color: #64748b;
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.aa-field input,
+.aa-field textarea {
+    width: 100%;
+    border: 1px solid #dbe3ea;
+    border-radius: 11px;
+    background: #f8fafc;
+    color: #1e293b;
+    font-weight: 700;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.aa-field input {
+    height: 42px;
+    padding: 0 12px;
+}
+
+.aa-field textarea {
+    resize: vertical;
+    padding: 12px;
+    font-family: inherit;
+}
+
+.aa-field input:focus,
+.aa-field textarea:focus {
+    background: #ffffff;
+    border-color: #2D4F1E;
+    box-shadow: 0 0 0 4px rgba(45, 79, 30, 0.08);
+}
+
+.aa-time-hint {
+    margin: -6px 0 16px;
+    color: #64748b;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.aa-modal-footer {
+    padding: 16px 22px;
+    background: #f8fafc;
+    border-top: 1px solid #edf2f7;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.aa-btn-cancel,
+.aa-btn-save {
+    height: 40px;
+    border: 0;
+    border-radius: 10px;
+    padding: 0 16px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.aa-btn-cancel {
+    background: #e2e8f0;
+    color: #475569;
+}
+
+.aa-btn-save {
+    background: #2D4F1E;
+    color: #ffffff;
+}
+
+.aa-btn-save:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
 }
 
 @media (max-width: 768px) {
@@ -466,6 +800,11 @@ const totalHours = computed(() => {
 
     .aa-table-section {
         padding: 16px;
+    }
+
+    .aa-form-row {
+        grid-template-columns: 1fr;
+        gap: 0;
     }
 }
 </style>

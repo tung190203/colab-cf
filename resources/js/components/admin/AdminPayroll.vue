@@ -18,7 +18,7 @@ const editForm = ref({
     staff_id: null, name: '', hourly_rate: 0,
     worked_hours: 0, calculated_salary: 0,
     bonus: 0, deduction: 0, note: '',
-    bonus_details: [], deduction_details: [], is_settled: false
+    bonus_details: [], deduction_details: [], is_settled: false, status: 'draft'
 });
 
 async function fetchPayroll() {
@@ -42,7 +42,7 @@ onMounted(fetchPayroll);
 function openEdit(item) {
     const hourly = Number(item.payroll?.hourly_rate ?? item.hourly_rate ?? 0);
     const hours = roundHours(item.payroll?.worked_hours ?? item.worked_hours ?? 0);
-    const calc = item.payroll ? Number(item.payroll.calculated_salary) : Math.round(hourly * hours);
+    const calc = item.payroll ? Number(item.payroll.calculated_salary) : Number(item.calculated_salary ?? Math.round(hourly * hours));
     
     editForm.value = {
         staff_id: item.staff_id,
@@ -54,7 +54,8 @@ function openEdit(item) {
         deduction: Number(item.payroll?.deduction ?? 0),
         note: item.payroll?.note ?? '',
         is_settled: Boolean(item.payroll?.is_settled),
-        bonus_details: Array.isArray(item.payroll?.bonus_details) ? [...item.payroll.bonus_details] : [],
+        status: item.payroll?.status ?? (item.payroll?.is_settled ? 'approved' : 'draft'),
+        bonus_details: Array.isArray(item.payroll?.bonus_details) ? [...item.payroll.bonus_details] : (Array.isArray(item.bonus_details) ? [...item.bonus_details] : []),
         deduction_details: Array.isArray(item.payroll?.deduction_details) ? [...item.payroll.deduction_details] : [],
     };
     if (editForm.value.bonus_details.length === 0 && editForm.value.bonus > 0) {
@@ -86,7 +87,7 @@ function removeDeduction(idx) { editForm.value.deduction_details.splice(idx, 1);
 async function savePayroll() {
     saving.value = true;
     try {
-        const isSettled = adminUser.value?.role === 'admin' && editForm.value.is_settled;
+        const isSettled = adminUser.value?.role === 'admin' && editForm.value.status === 'approved';
         editForm.value.worked_hours = roundHours(editForm.value.worked_hours);
 
         await axios.post('/api/admin/payroll', {
@@ -101,6 +102,7 @@ async function savePayroll() {
             bonus_details: editForm.value.bonus_details,
             deduction_details: editForm.value.deduction_details,
             is_settled: isSettled,
+            status: editForm.value.status,
         }, { headers: authHeader() });
         toast.success('Đã lưu bảng lương');
         editModal.value = false;
@@ -112,11 +114,19 @@ async function savePayroll() {
 function computedTotal(item) {
     const hourly = Number(item.payroll?.hourly_rate ?? item.hourly_rate ?? 0);
     const hours = roundHours(item.payroll?.worked_hours ?? item.worked_hours ?? 0);
-    const bonus = Number(item.payroll?.bonus ?? 0);
+    const bonus = Number(item.payroll?.bonus ?? item.bonus ?? 0);
     const ded = Number(item.payroll?.deduction ?? 0);
     
-    const calculated = item.payroll ? Number(item.payroll.calculated_salary) : (hourly * hours);
+    const calculated = item.payroll ? Number(item.payroll.calculated_salary) : Number(item.calculated_salary ?? (hourly * hours));
     return Math.max(0, calculated + bonus - ded);
+}
+
+function payrollStatus(item) {
+    if (!item.payroll) return { text: 'Chưa lập', className: 'pr-status--pending' };
+    const status = item.payroll.status || (item.payroll.is_settled ? 'approved' : 'draft');
+    if (status === 'approved') return { text: 'Đã quyết toán', className: 'pr-status--done' };
+    if (status === 'pending_approval') return { text: 'Chờ duyệt', className: 'pr-status--review' };
+    return { text: 'Bản nháp', className: 'pr-status--draft' };
 }
 
 function fmt(v) { return new Intl.NumberFormat('vi-VN').format(v) + ' ₫'; }
@@ -226,13 +236,13 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
                                 <span>{{ fmtHours(item.payroll?.worked_hours ?? item.worked_hours) }}h</span>
                             </td>
                             <td>{{ fmt(item.payroll?.hourly_rate ?? item.hourly_rate ?? 0) }}</td>
-                            <td>{{ fmt(item.payroll ? item.payroll.calculated_salary : Math.round(Number(item.hourly_rate) * Number(item.worked_hours))) }}</td>
-                            <td class="pr-green">{{ item.payroll ? fmt(item.payroll.bonus) : '—' }}</td>
+                            <td>{{ fmt(item.payroll ? item.payroll.calculated_salary : Number(item.calculated_salary ?? Math.round(Number(item.hourly_rate) * Number(item.worked_hours)))) }}</td>
+                            <td class="pr-green">{{ fmt(item.payroll ? item.payroll.bonus : item.bonus ?? 0) }}</td>
                             <td class="pr-red">{{ item.payroll ? fmt(item.payroll.deduction) : '—' }}</td>
                             <td class="pr-total">{{ fmt(computedTotal(item)) }}</td>
                             <td>
-                                <span class="pr-status" :class="item.payroll ? (item.payroll.is_settled ? 'pr-status--done' : 'pr-status--draft') : 'pr-status--pending'">
-                                    {{ !item.payroll ? 'Chưa lập' : (item.payroll.is_settled ? 'Đã quyết toán' : 'Bản nháp') }}
+                                <span class="pr-status" :class="payrollStatus(item).className">
+                                    {{ payrollStatus(item).text }}
                                 </span>
                             </td>
                             <td>
@@ -251,7 +261,7 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
             <div v-if="editModal" class="pr-overlay" @click.self="editModal = false">
                 <div class="pr-modal">
                     <div class="pr-modal-header">
-                        <h3>{{ editForm.is_settled ? 'Chi tiết bảng lương' : 'Tính lương' }} - {{ editForm.name }}</h3>
+                        <h3>{{ editForm.status === 'approved' ? 'Chi tiết bảng lương' : 'Tính lương' }} - {{ editForm.name }}</h3>
                         <span class="pr-modal-period">Tháng {{ selectedMonth }}/{{ selectedYear }}</span>
                         <button class="pr-modal-close" @click="editModal = false">✕</button>
                     </div>
@@ -262,16 +272,14 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
                                 <input 
                                     :value="fmtNoUnit(editForm.hourly_rate)" 
                                     @input="e => { editForm.hourly_rate = parseMoney(e.target.value); editForm.calculated_salary = Math.round(editForm.hourly_rate * editForm.worked_hours); }"
-                                    type="text" placeholder="0 ₫" :disabled="editForm.is_settled"
+                                    type="text" placeholder="0 ₫" :disabled="editForm.status === 'approved'"
                                 />
                             </div>
                             <div class="pr-edit-field">
                                 <label>Giờ làm thực tế</label>
-                                <input 
-                                    v-model.number="editForm.worked_hours"
-                                    @input="editForm.worked_hours = roundHours(editForm.worked_hours); editForm.calculated_salary = Math.round(editForm.hourly_rate * editForm.worked_hours)"
-                                    type="number" step="0.1" placeholder="0" :disabled="editForm.is_settled"
-                                />
+                                <div class="pr-computed-total" style="background: #f8f9fa; color: #333; font-size: 0.95rem;">
+                                    {{ fmtHours(editForm.worked_hours) }}h
+                                </div>
                             </div>
                             <div class="pr-edit-field">
                                 <label>Lương tính theo giờ (₫)</label>
@@ -283,11 +291,11 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
                                 <label>Thưởng / Phụ cấp</label>
                                 <div class="pr-details-list">
                                     <div v-for="(b, i) in editForm.bonus_details" :key="'b'+i" class="pr-detail-item">
-                                        <input v-model="b.label" type="text" placeholder="Tên khoản (VD: Phụ cấp xăng xe...)" class="pr-di-name" :disabled="editForm.is_settled" />
-                                        <input :value="fmtNoUnit(b.amount)" @input="e => { b.amount = parseMoney(e.target.value); calcTotals(); }" type="text" placeholder="0" class="pr-di-val" :disabled="editForm.is_settled" />
-                                        <button v-if="!editForm.is_settled" class="pr-di-btn" @click="removeBonus(i)">✕</button>
+                                        <input v-model="b.label" type="text" placeholder="Tên khoản (VD: Phụ cấp xăng xe...)" class="pr-di-name" :disabled="editForm.status === 'approved' || b.label?.startsWith('[AUTO]')" />
+                                        <input :value="fmtNoUnit(b.amount)" @input="e => { b.amount = parseMoney(e.target.value); calcTotals(); }" type="text" placeholder="0" class="pr-di-val" :disabled="editForm.status === 'approved' || b.label?.startsWith('[AUTO]')" />
+                                        <button v-if="editForm.status !== 'approved' && !b.label?.startsWith('[AUTO]')" class="pr-di-btn" @click="removeBonus(i)">✕</button>
                                     </div>
-                                    <button v-if="!editForm.is_settled" class="pr-add-btn" @click="addBonus">+ Thêm khoản thưởng</button>
+                                    <button v-if="editForm.status !== 'approved'" class="pr-add-btn" @click="addBonus">+ Thêm khoản thưởng</button>
                                 </div>
                                 <div class="pr-sub-total">Tổng thưởng: <strong class="pr-green">{{ fmt(editForm.bonus) }}</strong></div>
                             </div>
@@ -295,11 +303,11 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
                                 <label>Khấu trừ / Phạt</label>
                                 <div class="pr-details-list">
                                     <div v-for="(d, i) in editForm.deduction_details" :key="'d'+i" class="pr-detail-item">
-                                        <input v-model="d.label" type="text" placeholder="Tên khoản (VD: Đi trễ...)" class="pr-di-name" :disabled="editForm.is_settled" />
-                                        <input :value="fmtNoUnit(d.amount)" @input="e => { d.amount = parseMoney(e.target.value); calcTotals(); }" type="text" placeholder="0" class="pr-di-val" :disabled="editForm.is_settled" />
-                                        <button v-if="!editForm.is_settled" class="pr-di-btn" @click="removeDeduction(i)">✕</button>
+                                        <input v-model="d.label" type="text" placeholder="Tên khoản (VD: Đi trễ...)" class="pr-di-name" :disabled="editForm.status === 'approved'" />
+                                        <input :value="fmtNoUnit(d.amount)" @input="e => { d.amount = parseMoney(e.target.value); calcTotals(); }" type="text" placeholder="0" class="pr-di-val" :disabled="editForm.status === 'approved'" />
+                                        <button v-if="editForm.status !== 'approved'" class="pr-di-btn" @click="removeDeduction(i)">✕</button>
                                     </div>
-                                    <button v-if="!editForm.is_settled" class="pr-add-btn" @click="addDeduction">+ Thêm khoản khấu trừ</button>
+                                    <button v-if="editForm.status !== 'approved'" class="pr-add-btn" @click="addDeduction">+ Thêm khoản khấu trừ</button>
                                 </div>
                                 <div class="pr-sub-total">Tổng khấu trừ: <strong class="pr-red">{{ fmt(editForm.deduction) }}</strong></div>
                             </div>
@@ -311,16 +319,19 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
                             </div>
                             <div class="pr-edit-field pr-edit-field--full">
                                 <label>Ghi chú</label>
-                                <textarea v-model="editForm.note" rows="2" placeholder="Ghi chú thêm..." :disabled="editForm.is_settled"></textarea>
+                                <textarea v-model="editForm.note" rows="2" placeholder="Ghi chú thêm..." :disabled="editForm.status === 'approved'"></textarea>
                             </div>
                         </div>
                     </div>
                     <div class="pr-modal-footer">
                         <button class="pr-btn-cancel" @click="editModal = false">Đóng</button>
-                        <button v-if="!editForm.is_settled" class="pr-btn-draft" @click="editForm.is_settled = false; savePayroll()" :disabled="saving">
+                        <button v-if="editForm.status !== 'approved'" class="pr-btn-draft" @click="editForm.status = 'draft'; savePayroll()" :disabled="saving">
                             Lưu nháp
                         </button>
-                        <button v-if="!editForm.is_settled && adminUser?.role === 'admin'" class="pr-btn-save" @click="editForm.is_settled = true; savePayroll()" :disabled="saving">
+                        <button v-if="editForm.status !== 'approved' && adminUser?.role !== 'admin'" class="pr-btn-save" @click="editForm.status = 'pending_approval'; savePayroll()" :disabled="saving">
+                            Gửi duyệt
+                        </button>
+                        <button v-if="editForm.status !== 'approved' && adminUser?.role === 'admin'" class="pr-btn-save" @click="editForm.status = 'approved'; savePayroll()" :disabled="saving">
                             <span v-if="saving" class="pr-mini-spinner"></span>
                             Xác nhận Quyết toán
                         </button>
@@ -439,6 +450,7 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
 .pr-status--done { background: rgba(22,163,74,0.1); color: #16a34a; }
 .pr-status--pending { background: rgba(245,158,11,0.1); color: #d97706; }
 .pr-status--draft { background: rgba(59,130,246,0.1); color: #3b82f6; }
+.pr-status--review { background: rgba(168,85,247,0.1); color: #9333ea; }
 
 .pr-edit-btn {
     padding: 7px 14px; border-radius: 8px;

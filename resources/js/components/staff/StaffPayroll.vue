@@ -87,6 +87,12 @@ const getDeductionIcon = (label) => {
     if (l.includes('công đoàn')) return Users;
     return CircleDollarSign;
 };
+
+function evidenceUrl(path) {
+    if (!path) return '';
+    if (String(path).startsWith('http')) return path;
+    return `/storage/${path}`;
+}
 </script>
 
 <template>
@@ -131,27 +137,30 @@ const getDeductionIcon = (label) => {
                             <div class="sp-mc-v">{{ fmt(payroll.calculated_salary).replace(' ₫', ' VND') }}</div>
                         </div>
                         <div class="sp-mc-col" v-if="payroll.bonus_details && payroll.bonus_details.length > 0">
-                            <div class="sp-mc-lbl">Thưởng / Phụ cấp</div>
+                            <div class="sp-mc-lbl">Phụ cấp</div>
                             <div class="sp-mc-v">{{ fmt(payroll.bonus).replace(' ₫', ' VND') }}</div>
                         </div>
                         <div class="sp-mc-col" v-else>
-                            <div class="sp-mc-lbl">Thưởng</div>
+                            <div class="sp-mc-lbl">Phụ cấp</div>
                             <div class="sp-mc-v">{{ fmt(payroll.bonus).replace(' ₫', ' VND') }}</div>
                         </div>
                         <div class="sp-mc-col">
-                            <div class="sp-mc-lbl">Tổng giảm trừ</div>
+                            <div class="sp-mc-lbl">Tổng phạt</div>
                             <div class="sp-mc-v" style="color: #ef4444;">-{{ fmt(payroll.deduction).replace(' ₫', ' VND') }}</div>
                         </div>
                     </div>
 
                     <template v-if="payroll.deduction > 0">
                         <div class="sp-mc-divider"></div>
-                        <h4 style="font-size: 0.95rem; font-weight: 700; margin-bottom: 16px; color: #334155;">Chi tiết khoản giảm trừ</h4>
+                        <h4 style="font-size: 0.95rem; font-weight: 700; margin-bottom: 16px; color: #334155;">Chi tiết khoản phạt</h4>
                         <div class="sp-ded-list" v-if="payroll.deduction_details && payroll.deduction_details.length > 0">
                             <div class="sp-ded-item" v-for="(d, i) in payroll.deduction_details" :key="i">
                                 <div class="sp-di-icon"><component :is="getDeductionIcon(d.label)" :size="18"/></div>
                                 <div class="sp-di-info">
                                     <div class="sp-di-name">{{ d.label }}</div>
+                                    <div class="sp-di-note" v-if="d.quantity">Số lượt: {{ d.quantity }} × {{ fmt(d.unit_amount || 0).replace(' ₫', ' VND') }}</div>
+                                    <div class="sp-di-note" v-if="d.reason">Lý do: {{ d.reason }}</div>
+                                    <a v-if="d.evidence_path" class="sp-di-link" :href="evidenceUrl(d.evidence_path)" target="_blank">Xem bằng chứng</a>
                                 </div>
                                 <div class="sp-di-val">-{{ fmt(d.amount).replace(' ₫', ' VND') }}</div>
                             </div>
@@ -159,7 +168,7 @@ const getDeductionIcon = (label) => {
                         <div v-else class="sp-ded-list">
                              <div class="sp-ded-item">
                                 <div class="sp-di-icon"><CircleDollarSign :size="18"/></div>
-                                <div class="sp-di-info"><div class="sp-di-name">Khấu trừ khác</div></div>
+                                <div class="sp-di-info"><div class="sp-di-name">Phạt khác</div></div>
                                 <div class="sp-di-val">-{{ fmt(payroll.deduction).replace(' ₫', ' VND') }}</div>
                             </div>
                         </div>
@@ -175,7 +184,7 @@ const getDeductionIcon = (label) => {
                     </div>
                     <div class="sp-chart-legend">
                         <div class="sp-leg-item"><span class="sp-dot c-base"></span>Lương chính</div>
-                        <div class="sp-leg-item"><span class="sp-dot c-bonus"></span>Phụ cấp & Thưởng</div>
+                        <div class="sp-leg-item"><span class="sp-dot c-bonus"></span>Phụ cấp</div>
                     </div>
                 </div>
 
@@ -327,6 +336,8 @@ const getDeductionIcon = (label) => {
 .sp-di-icon { width: 44px; height: 44px; background: #fef2f2; color: #ef4444; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .sp-di-info { flex: 1; }
 .sp-di-name { font-weight: 600; color: #334155; font-size: 0.95rem; }
+.sp-di-note { color: #64748b; font-size: 0.82rem; margin-top: 3px; }
+.sp-di-link { color: #2563eb; font-size: 0.82rem; font-weight: 700; text-decoration: none; display: inline-block; margin-top: 4px; }
 .sp-di-sub { font-size: 0.8rem; color: #94a3b8; margin-top: 2px; }
 .sp-di-val { font-weight: 700; color: #ef4444; }
 

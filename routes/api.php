@@ -43,6 +43,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('/admin/payroll', [AdminController::class, 'getPayroll']);
         Route::post('/admin/payroll', [AdminController::class, 'savePayroll']);
+        Route::get('/admin/penalty-rules', [AdminController::class, 'getPenaltyRules']);
+        Route::post('/admin/penalty-rules', [AdminController::class, 'storePenaltyRule'])->middleware('role:admin');
+        Route::put('/admin/penalty-rules/{penaltyRule}', [AdminController::class, 'updatePenaltyRule'])->middleware('role:admin');
+        Route::delete('/admin/penalty-rules/{penaltyRule}', [AdminController::class, 'destroyPenaltyRule'])->middleware('role:admin');
         Route::get('/admin/attendance', [AdminController::class, 'getAttendance']);
         Route::post('/admin/attendance', [AdminController::class, 'saveAttendance']);
         Route::get('/admin/audit-logs', [AdminController::class, 'getAuditLogs'])->middleware('role:admin');

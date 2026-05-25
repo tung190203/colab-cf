@@ -258,14 +258,27 @@ class AdminController extends Controller
             'schedules.*.staff_id' => 'required|exists:users,id',
             'schedules.*.date'     => 'required|date',
             'schedules.*.shift'    => 'required|exists:shifts,key',
+            'schedules.*.is_ot'    => 'nullable|boolean',
+            'schedules.*.is_holiday' => 'nullable|boolean',
+            'schedules.*.ot_multiplier' => 'nullable|numeric|min:1|max:10',
             'schedules.*.note'     => 'nullable|string',
         ]);
 
         $saved = [];
         foreach ($request->schedules as $item) {
+            $isOt = (bool) ($item['is_ot'] ?? false);
+            $isHoliday = (bool) ($item['is_holiday'] ?? false);
+            $otMultiplier = ($isOt || $isHoliday) ? (float) ($item['ot_multiplier'] ?? 2) : null;
+
             $schedule = StaffSchedule::updateOrCreate(
                 ['staff_id' => $item['staff_id'], 'date' => $item['date'], 'shift' => $item['shift']],
-                ['status' => 'scheduled', 'note' => $item['note'] ?? null]
+                [
+                    'status' => 'scheduled',
+                    'is_ot' => $isOt,
+                    'is_holiday' => $isHoliday,
+                    'ot_multiplier' => $otMultiplier,
+                    'note' => $item['note'] ?? null,
+                ]
             );
             $saved[] = $schedule;
         }
@@ -306,22 +319,7 @@ class AdminController extends Controller
             $payroll = Payroll::where('staff_id', $u->id)
                 ->where('month', $month)->where('year', $year)->first();
 
-            // Tính số giờ làm từ bảng attendance
-            $attendances = Attendance::where('staff_id', $u->id)
-                ->whereMonth('date', $month)
-                ->whereYear('date', $year)
-                ->whereNotNull('check_in_at')
-                ->whereNotNull('check_out_at')
-                ->get();
-
-            $workedHours = 0;
-            foreach ($attendances as $att) {
-                $checkIn = Carbon::parse($att->check_in_at);
-                $checkOut = Carbon::parse($att->check_out_at);
-                // Làm tròn đến 2 chữ số thập phân
-                $workedHours += round(abs($checkOut->diffInMinutes($checkIn, false)) / 60, 2);
-            }
-            $workedHours = round($workedHours, 2);
+            $summary = $this->calculatePayrollSummary($u->id, (int) $month, (int) $year, (int) $u->hourly_rate);
 
             return [
                 'staff_id'     => $u->id,
@@ -329,7 +327,11 @@ class AdminController extends Controller
                 'role'         => $u->role,
                 'image_url'    => $u->image_url,
                 'hourly_rate'  => $u->hourly_rate,
-                'worked_hours' => $workedHours,
+                'worked_hours' => $summary['worked_hours'],
+                'calculated_salary' => $summary['calculated_salary'],
+                'bonus' => $summary['bonus'],
+                'bonus_details' => $summary['bonus_details'],
+                'shift_breakdown' => $summary['shift_breakdown'],
                 'payroll'      => $payroll,
             ];
         });
@@ -344,25 +346,43 @@ class AdminController extends Controller
             'month'        => 'required|integer|between:1,12',
             'year'         => 'required|integer',
             'hourly_rate'  => 'required|integer|min:0',
-            'worked_hours' => 'required|numeric|min:0',
+            'worked_hours' => 'nullable|numeric|min:0',
             'bonus'        => 'nullable|integer|min:0',
             'deduction'    => 'nullable|integer|min:0',
             'note'         => 'nullable|string',
             'bonus_details' => 'nullable|array',
             'deduction_details' => 'nullable|array',
             'is_settled' => 'boolean',
+            'status' => 'nullable|in:draft,pending_approval,approved',
         ]);
 
-        if ($request->boolean('is_settled') && $request->user()->role !== 'admin') {
+        $targetStatus = $request->input('status');
+        if (!$targetStatus) {
+            $targetStatus = $request->boolean('is_settled') ? 'approved' : 'draft';
+        }
+
+        if ($targetStatus === 'approved' && $request->user()->role !== 'admin') {
             return response()->json(['message' => 'Chỉ admin được xác nhận quyết toán bảng lương'], 403);
         }
 
+        $existingPayroll = Payroll::where('staff_id', $request->staff_id)
+            ->where('month', $request->month)
+            ->where('year', $request->year)
+            ->first();
+
+        if ($existingPayroll && ($existingPayroll->status === 'approved' || $existingPayroll->is_settled)) {
+            return response()->json(['message' => 'Bảng lương đã quyết toán, không thể sửa'], 422);
+        }
+
         $hourly    = (int) $request->hourly_rate;
-        $hours     = round((float) $request->worked_hours, 2);
-        $calcBase  = (int) ($hourly * $hours);
-        $bonus     = (int) ($request->bonus ?? 0);
+        $summary = $this->calculatePayrollSummary((int) $request->staff_id, (int) $request->month, (int) $request->year, $hourly);
+        $hours = $summary['worked_hours'];
+        $calcBase = $summary['calculated_salary'];
+        $bonusDetails = $this->mergeAutoBonusDetails($summary['bonus_details'], $request->bonus_details ?? []);
+        $bonus = collect($bonusDetails)->sum(fn($item) => (int) ($item['amount'] ?? 0));
         $deduction = (int) ($request->deduction ?? 0);
         $total     = max(0, $calcBase + $bonus - $deduction);
+        $isSettled = $targetStatus === 'approved';
 
         $payroll = Payroll::updateOrCreate(
             ['staff_id' => $request->staff_id, 'month' => $request->month, 'year' => $request->year],
@@ -374,9 +394,13 @@ class AdminController extends Controller
                 'deduction'         => $deduction,
                 'total'             => $total,
                 'note'              => $request->note,
-                'bonus_details'     => $request->bonus_details,
+                'bonus_details'     => $bonusDetails,
                 'deduction_details' => $request->deduction_details,
-                'is_settled'        => $request->is_settled ?? false,
+                'is_settled'        => $isSettled,
+                'status'            => $targetStatus,
+                'submitted_at'      => $targetStatus === 'pending_approval' ? now() : null,
+                'approved_at'       => $isSettled ? now() : null,
+                'approved_by'       => $isSettled ? $request->user()->id : null,
             ]
         );
 
@@ -410,12 +434,17 @@ class AdminController extends Controller
             ->when($staffId, fn($query) => $query->where('staff_id', $staffId))
             ->get()
             ->keyBy(fn($item) => $item->staff_id . '_' . $item->date->format('Y-m-d') . '_' . $item->shift);
+        $shifts = Shift::all()->keyBy('key');
 
         $records = $schedules
             ->filter(fn($schedule) => $schedule->date->format('Y-m-d') <= $today)
-            ->map(function ($schedule) use ($attendances) {
+            ->map(function ($schedule) use ($attendances, $shifts) {
                 $date = $schedule->date->format('Y-m-d');
                 $attendance = $attendances->get($schedule->staff_id . '_' . $date . '_' . $schedule->shift);
+                $shift = $shifts->get($schedule->shift);
+                $payableHours = ($attendance && $shift)
+                    ? $this->calculatePayableHoursForSchedule($schedule, $attendance, $shift)
+                    : 0;
 
                 return [
                     'id' => $schedule->id . '_admin_attendance',
@@ -425,14 +454,161 @@ class AdminController extends Controller
                     'staff_image_url' => $schedule->staff?->image_url,
                     'date' => $date,
                     'shift' => $schedule->shift,
+                    'shift_start_time' => $shift?->start_time,
+                    'shift_end_time' => $shift?->end_time,
+                    'is_ot' => (bool) $schedule->is_ot,
+                    'is_holiday' => (bool) $schedule->is_holiday,
+                    'attendance_id' => $attendance?->id,
                     'check_in_at' => $attendance?->check_in_at,
                     'check_out_at' => $attendance?->check_out_at,
+                    'payable_hours' => $payableHours,
                     'note' => $attendance?->note,
+                    'is_manual_adjusted' => (bool) ($attendance?->is_manual_adjusted ?? false),
+                    'adjusted_at' => $attendance?->adjusted_at,
                 ];
             })
             ->values();
 
         return response()->json($records);
+    }
+
+    public function saveAttendance(Request $request)
+    {
+        $request->validate([
+            'staff_id' => 'required|exists:users,id',
+            'date' => 'required|date',
+            'shift' => 'required|exists:shifts,key',
+            'check_in_time' => 'nullable|date_format:H:i',
+            'check_out_time' => 'nullable|date_format:H:i',
+            'note' => 'nullable|string',
+        ]);
+
+        $date = Carbon::parse($request->date)->toDateString();
+
+        $schedule = StaffSchedule::where('staff_id', $request->staff_id)
+            ->whereDate('date', $date)
+            ->where('shift', $request->shift)
+            ->first();
+
+        if (!$schedule) {
+            return response()->json(['message' => 'Nhân viên chưa được phân ca này'], 422);
+        }
+
+        $shift = Shift::where('key', $request->shift)->firstOrFail();
+        $shiftStart = Carbon::parse($date . ' ' . $shift->start_time, 'Asia/Ho_Chi_Minh');
+        $shiftEnd = Carbon::parse($date . ' ' . $shift->end_time, 'Asia/Ho_Chi_Minh');
+        if ($shiftEnd->lessThanOrEqualTo($shiftStart)) {
+            $shiftEnd->addDay();
+        }
+
+        if ($request->filled('check_out_time') && !$request->filled('check_in_time')) {
+            return response()->json(['message' => 'Cần có giờ vào trước khi nhập giờ ra'], 422);
+        }
+
+        $checkInAt = $request->filled('check_in_time')
+            ? Carbon::parse($date . ' ' . $request->check_in_time, 'Asia/Ho_Chi_Minh')
+            : null;
+        $checkOutAt = $request->filled('check_out_time')
+            ? Carbon::parse($date . ' ' . $request->check_out_time, 'Asia/Ho_Chi_Minh')
+            : null;
+
+        if ($checkInAt && $checkOutAt && $checkOutAt->lessThanOrEqualTo($checkInAt)) {
+            return response()->json(['message' => 'Giờ ra phải sau giờ vào'], 422);
+        }
+
+        if (!$schedule->is_ot && !$schedule->is_holiday) {
+            if ($checkInAt && ($checkInAt->lt($shiftStart) || $checkInAt->gt($shiftEnd))) {
+                return response()->json(['message' => 'Giờ vào phải nằm trong khung giờ ca ' . $shift->start_time . ' - ' . $shift->end_time], 422);
+            }
+            if ($checkOutAt && ($checkOutAt->lt($shiftStart) || $checkOutAt->gt($shiftEnd))) {
+                return response()->json(['message' => 'Giờ ra phải nằm trong khung giờ ca ' . $shift->start_time . ' - ' . $shift->end_time], 422);
+            }
+        }
+
+        $oldAttendance = Attendance::where('staff_id', $request->staff_id)
+            ->where('date', $date)
+            ->where('shift', $request->shift)
+            ->first();
+
+        $attendance = Attendance::updateOrCreate(
+            ['staff_id' => $request->staff_id, 'date' => $date, 'shift' => $request->shift],
+            [
+                'check_in_at' => $checkInAt,
+                'check_out_at' => $checkOutAt,
+                'note' => $request->note,
+                'is_manual_adjusted' => true,
+                'adjusted_by' => $request->user()->id,
+                'adjusted_at' => now(),
+            ]
+        );
+
+        DB::table('attendance_adjustment_logs')->insert([
+            'attendance_id' => $attendance->id,
+            'staff_id' => $request->staff_id,
+            'adjusted_by' => $request->user()->id,
+            'date' => $date,
+            'shift' => $request->shift,
+            'old_check_in_at' => $oldAttendance?->check_in_at,
+            'old_check_out_at' => $oldAttendance?->check_out_at,
+            'new_check_in_at' => $attendance->check_in_at,
+            'new_check_out_at' => $attendance->check_out_at,
+            'old_note' => $oldAttendance?->note,
+            'new_note' => $attendance->note,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->recalculateDraftPayrollForDate((int) $request->staff_id, $date);
+
+        return response()->json(['message' => 'Đã cập nhật chấm công', 'attendance' => $attendance]);
+    }
+
+    public function getAuditLogs(Request $request)
+    {
+        if ($request->user()->role !== 'admin') {
+            return response()->json(['message' => 'Chỉ admin được xem audit log'], 403);
+        }
+
+        $request->validate([
+            'month' => 'nullable|integer|between:1,12',
+            'year' => 'nullable|integer|min:2000|max:2100',
+            'staff_id' => 'nullable|exists:users,id',
+        ]);
+
+        $month = (int) $request->query('month', now()->month);
+        $year = (int) $request->query('year', now()->year);
+        $staffId = $request->query('staff_id');
+
+        $logs = DB::table('attendance_adjustment_logs as logs')
+            ->leftJoin('users as staff', 'logs.staff_id', '=', 'staff.id')
+            ->leftJoin('users as editor', 'logs.adjusted_by', '=', 'editor.id')
+            ->leftJoin('shifts', 'logs.shift', '=', 'shifts.key')
+            ->whereMonth('logs.date', $month)
+            ->whereYear('logs.date', $year)
+            ->when($staffId, fn($query) => $query->where('logs.staff_id', $staffId))
+            ->orderByDesc('logs.created_at')
+            ->select([
+                'logs.id',
+                'logs.attendance_id',
+                'logs.staff_id',
+                'logs.adjusted_by',
+                'logs.date',
+                'logs.shift',
+                'logs.old_check_in_at',
+                'logs.old_check_out_at',
+                'logs.new_check_in_at',
+                'logs.new_check_out_at',
+                'logs.old_note',
+                'logs.new_note',
+                'logs.created_at',
+                'staff.name as staff_name',
+                'editor.name as editor_name',
+                'shifts.name as shift_name',
+            ])
+            ->limit(300)
+            ->get();
+
+        return response()->json($logs);
     }
 
     public function getCustomerStats(Request $request)
@@ -639,36 +815,144 @@ class AdminController extends Controller
             return;
         }
 
-        $workedHours = $this->calculateWorkedHours($staffId, $month, $year);
         $hourlyRate = (int) $payroll->hourly_rate;
-        $calculatedSalary = (int) ($hourlyRate * $workedHours);
-        $bonus = (int) $payroll->bonus;
+        $summary = $this->calculatePayrollSummary($staffId, $month, $year, $hourlyRate);
+        $workedHours = $summary['worked_hours'];
+        $calculatedSalary = $summary['calculated_salary'];
+        $bonusDetails = $this->mergeAutoBonusDetails($summary['bonus_details'], $payroll->bonus_details ?? []);
+        $bonus = collect($bonusDetails)->sum(fn($item) => (int) ($item['amount'] ?? 0));
         $deduction = (int) $payroll->deduction;
 
         $payroll->update([
             'worked_hours' => $workedHours,
             'calculated_salary' => $calculatedSalary,
+            'bonus' => $bonus,
+            'bonus_details' => $bonusDetails,
             'total' => max(0, $calculatedSalary + $bonus - $deduction),
         ]);
     }
 
     private function calculateWorkedHours(int $staffId, int $month, int $year): float
     {
-        $workedHours = 0;
+        return $this->calculatePayrollSummary($staffId, $month, $year, 0)['worked_hours'];
+    }
+
+    private function calculatePayrollSummary(int $staffId, int $month, int $year, int $hourlyRate): array
+    {
+        $schedules = StaffSchedule::query()
+            ->where('staff_id', $staffId)
+            ->whereMonth('date', $month)
+            ->whereYear('date', $year)
+            ->get();
 
         $attendances = Attendance::where('staff_id', $staffId)
             ->whereMonth('date', $month)
             ->whereYear('date', $year)
-            ->whereNotNull('check_in_at')
-            ->whereNotNull('check_out_at')
             ->get();
 
-        foreach ($attendances as $attendance) {
-            $checkIn = Carbon::parse($attendance->check_in_at);
-            $checkOut = Carbon::parse($attendance->check_out_at);
-            $workedHours += round(abs($checkOut->diffInMinutes($checkIn, false)) / 60, 2);
+        $attendanceMap = $attendances->keyBy(fn($item) => $item->date->format('Y-m-d') . '_' . $item->shift);
+        $shifts = Shift::all()->keyBy('key');
+
+        $workedHours = 0;
+        $calculatedSalary = 0;
+        $eligibleMealShifts = 0;
+        $breakdown = [
+            'regular_hours' => 0,
+            'ot_hours' => 0,
+            'regular_shifts' => 0,
+            'ot_shifts' => 0,
+            'morning_shifts' => 0,
+            'afternoon_shifts' => 0,
+        ];
+
+        foreach ($schedules as $schedule) {
+            $date = $schedule->date->format('Y-m-d');
+            $attendance = $attendanceMap->get($date . '_' . $schedule->shift);
+            $shift = $shifts->get($schedule->shift);
+
+            if (!$attendance || !$shift || !$attendance->check_in_at || !$attendance->check_out_at) {
+                continue;
+            }
+
+            $hours = $this->calculatePayableHoursForSchedule($schedule, $attendance, $shift);
+            if ($hours <= 0) {
+                continue;
+            }
+
+            $isSpecialPayShift = $schedule->is_ot || $schedule->is_holiday;
+            $multiplier = $isSpecialPayShift ? (float) ($schedule->ot_multiplier ?: 2) : 1;
+            $workedHours += $hours;
+            $calculatedSalary += (int) round($hours * $hourlyRate * $multiplier);
+            $eligibleMealShifts++;
+
+            if ($isSpecialPayShift) {
+                $breakdown['ot_hours'] += $hours;
+                $breakdown['ot_shifts']++;
+            } else {
+                $breakdown['regular_hours'] += $hours;
+                $breakdown['regular_shifts']++;
+            }
+
+            if (str_contains(strtolower($shift->name), 'sáng') || str_contains($schedule->shift, 'morning')) {
+                $breakdown['morning_shifts']++;
+            }
+            if (str_contains(strtolower($shift->name), 'chiều') || str_contains($schedule->shift, 'afternoon')) {
+                $breakdown['afternoon_shifts']++;
+            }
         }
 
-        return round($workedHours, 2);
+        $mealAllowance = $eligibleMealShifts * 30000;
+        $bonusDetails = $mealAllowance > 0
+            ? [['label' => '[AUTO] Phụ cấp ăn ca (' . $eligibleMealShifts . ' ca)', 'amount' => $mealAllowance]]
+            : [];
+
+        foreach ($breakdown as $key => $value) {
+            $breakdown[$key] = is_float($value) ? round($value, 2) : $value;
+        }
+
+        return [
+            'worked_hours' => round($workedHours, 2),
+            'calculated_salary' => $calculatedSalary,
+            'bonus' => $mealAllowance,
+            'bonus_details' => $bonusDetails,
+            'shift_breakdown' => $breakdown,
+        ];
+    }
+
+    private function calculatePayableHoursForSchedule(StaffSchedule $schedule, Attendance $attendance, Shift $shift): float
+    {
+        if (!$attendance->check_in_at || !$attendance->check_out_at) {
+            return 0;
+        }
+
+        $date = $schedule->date->format('Y-m-d');
+        $shiftStart = Carbon::parse($date . ' ' . $shift->start_time, 'Asia/Ho_Chi_Minh');
+        $shiftEnd = Carbon::parse($date . ' ' . $shift->end_time, 'Asia/Ho_Chi_Minh');
+
+        if ($shiftEnd->lessThanOrEqualTo($shiftStart)) {
+            $shiftEnd->addDay();
+        }
+
+        $checkIn = Carbon::parse($attendance->check_in_at);
+        $checkOut = Carbon::parse($attendance->check_out_at);
+
+        $payStart = $checkIn->greaterThan($shiftStart) ? $checkIn : $shiftStart;
+        $payEnd = $checkOut->lessThan($shiftEnd) ? $checkOut : $shiftEnd;
+
+        if ($payEnd->lessThanOrEqualTo($payStart)) {
+            return 0;
+        }
+
+        return round($payStart->diffInMinutes($payEnd) / 60, 2);
+    }
+
+    private function mergeAutoBonusDetails(array $autoDetails, array $details): array
+    {
+        $manualDetails = collect($details)
+            ->filter(fn($item) => !str_starts_with((string) ($item['label'] ?? ''), '[AUTO]'))
+            ->values()
+            ->all();
+
+        return array_values(array_merge($autoDetails, $manualDetails));
     }
 }

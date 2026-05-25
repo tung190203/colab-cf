@@ -180,8 +180,33 @@ function getSchedulesForDay(date) {
     return schedules.value.filter(s => toDateStr(s.date) === ds);
 }
 
+function getShiftSchedulesForDay(date, shiftKey) {
+    return getSchedulesForDay(date).filter(s => s.shift === shiftKey);
+}
+
+function formatScheduleNames(items) {
+    return items.map(s => {
+        const label = s.is_holiday ? 'Lễ' : (s.is_ot ? 'OT' : '');
+        return `${s.staff?.name || 'Nhân viên'}${label ? ` (${label} ${formatOtMultiplier(s.ot_multiplier)})` : ''}`;
+    }).join(', ');
+}
+
+function formatOtMultiplier(value) {
+    const n = Number(value || 2);
+    return `x${Number.isInteger(n) ? n : n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}`;
+}
+
 const showModal = ref(false);
 const modalDate = ref(null);
+const otModal = ref({
+    show: false,
+    staffId: null,
+    shiftKey: '',
+    staffName: '',
+    shiftName: '',
+    payType: 'ot',
+    multiplier: 2,
+});
 
 function openDay(day) {
     if (!day.current) return;
@@ -205,7 +230,7 @@ async function toggleStaffShift(staffId, shiftKey) {
             schedules.value = schedules.value.filter(s => s.id !== existing.id);
         } else {
             const res = await axios.post('/api/admin/schedule', {
-                schedules: [{ staff_id: staffId, date: ds, shift: shiftKey }]
+                schedules: [{ staff_id: staffId, date: ds, shift: shiftKey, is_ot: false, is_holiday: false }]
             }, { headers: authHeader() });
             
             const newSchedules = res.data.schedules.map(ns => {
@@ -222,6 +247,77 @@ async function toggleStaffShift(staffId, shiftKey) {
     }
 }
 
+function openOtMultiplierModal(staffMember, shift, payType = 'ot') {
+    if (saving.value) return;
+    const existing = getSchedule(staffMember.id, modalDate.value, shift.key);
+
+    otModal.value = {
+        show: true,
+        staffId: staffMember.id,
+        shiftKey: shift.key,
+        staffName: staffMember.name,
+        shiftName: shift.label,
+        payType,
+        multiplier: Number(existing?.ot_multiplier || 2),
+    };
+}
+
+async function confirmOtMultiplier() {
+    const multiplier = Number(otModal.value.multiplier);
+    if (!Number.isFinite(multiplier) || multiplier < 1 || multiplier > 10) {
+        toast.error('Hệ số OT phải từ 1 đến 10');
+        return;
+    }
+
+    await setStaffShiftPay(otModal.value.staffId, otModal.value.shiftKey, otModal.value.payType, true, multiplier);
+    otModal.value.show = false;
+}
+
+async function setStaffShiftPay(staffId, shiftKey, payType, enabled, otMultiplier = null) {
+    if (saving.value) return;
+    const ds = toDateStr(modalDate.value);
+    const existing = getSchedule(staffId, modalDate.value, shiftKey);
+    const isOt = payType === 'ot' ? enabled : Boolean(existing?.is_ot);
+    const isHoliday = payType === 'holiday' ? enabled : Boolean(existing?.is_holiday);
+
+    saving.value = true;
+    try {
+        const res = await axios.post('/api/admin/schedule', {
+            schedules: [{
+                staff_id: staffId,
+                date: ds,
+                shift: shiftKey,
+                is_ot: isOt,
+                is_holiday: isHoliday,
+                ot_multiplier: (isOt || isHoliday) ? (otMultiplier ?? existing?.ot_multiplier ?? 2) : null,
+            }]
+        }, { headers: authHeader() });
+
+        const newSchedules = res.data.schedules.map(ns => {
+            const sInfo = staff.value.find(st => Number(st.id) === Number(ns.staff_id));
+            return { ...ns, staff: sInfo };
+        });
+
+        newSchedules.forEach(ns => {
+            const idx = schedules.value.findIndex(s =>
+                toDateStr(s.date) === ds &&
+                s.shift === shiftKey &&
+                Number(s.staff_id) === Number(staffId)
+            );
+            if (idx >= 0) {
+                schedules.value[idx] = ns;
+            } else {
+                schedules.value.push(ns);
+            }
+        });
+    } catch (e) {
+        const msg = e.response?.data?.message || 'Lỗi khi cập nhật trạng thái OT';
+        toast.error(msg);
+    } finally {
+        saving.value = false;
+    }
+}
+
 const hasShift = (staffId, date, key) => {
     const ds = toDateStr(date);
     return schedules.value.some(s => 
@@ -230,6 +326,19 @@ const hasShift = (staffId, date, key) => {
         Number(s.staff_id) === Number(staffId)
     );
 };
+
+const getSchedule = (staffId, date, key) => {
+    const ds = toDateStr(date);
+    return schedules.value.find(s =>
+        toDateStr(s.date) === ds &&
+        s.shift === key &&
+        Number(s.staff_id) === Number(staffId)
+    );
+};
+
+const isShiftOt = (staffId, date, key) => Boolean(getSchedule(staffId, date, key)?.is_ot);
+const isShiftHoliday = (staffId, date, key) => Boolean(getSchedule(staffId, date, key)?.is_holiday);
+const getShiftOtMultiplier = (staffId, date, key) => getSchedule(staffId, date, key)?.ot_multiplier;
 
 </script>
 
@@ -287,12 +396,12 @@ const hasShift = (staffId, date, key) => {
                             <div class="day-shifts-summary">
                                 <template v-for="shift in SHIFTS" :key="shift.key">
                                     <div 
-                                        v-if="getSchedulesForDay(day.date).filter(s => s.shift === shift.key).length > 0" 
+                                        v-if="getShiftSchedulesForDay(day.date, shift.key).length > 0" 
                                         class="shift-names-row"
                                     >
                                         <span class="sn-label" :style="{ color: shift.color }">{{ shift.short }}:</span>
                                         <span class="sn-list">
-                                            {{ getSchedulesForDay(day.date).filter(s => s.shift === shift.key).map(s => s.staff?.name).join(', ') }}
+                                            {{ formatScheduleNames(getShiftSchedulesForDay(day.date, shift.key)) }}
                                         </span>
                                     </div>
                                 </template>
@@ -333,7 +442,7 @@ const hasShift = (staffId, date, key) => {
                                             <span class="scp-time">{{ shift.time }}</span>
                                         </div>
                                         <div class="scp-count">
-                                            {{ getSchedulesForDay(modalDate).filter(s => s.shift === shift.key).length }} nv
+                                            {{ getShiftSchedulesForDay(modalDate, shift.key).length }} nv
                                         </div>
                                     </div>
                                     <div class="scp-staff-list">
@@ -353,8 +462,36 @@ const hasShift = (staffId, date, key) => {
                                                     {{ s.name }}
                                                     <span v-if="s.id === adminUser?.id" style="color: #64748b; font-weight: 500; font-size: 0.85em;">(Tôi)</span>
                                                 </span>
-                                                <span class="sri-status">{{ hasShift(s.id, modalDate, shift.key) ? 'Đang chọn' : 'Chưa chọn' }}</span>
+                                                <span class="sri-status">
+                                                    {{ isShiftHoliday(s.id, modalDate, shift.key) ? `Ca lễ ${formatOtMultiplier(getShiftOtMultiplier(s.id, modalDate, shift.key))}` : (isShiftOt(s.id, modalDate, shift.key) ? `Ca OT ${formatOtMultiplier(getShiftOtMultiplier(s.id, modalDate, shift.key))}` : (hasShift(s.id, modalDate, shift.key) ? 'Đang chọn' : 'Chưa chọn')) }}
+                                                </span>
                                             </div>
+                                            <label
+                                                class="ot-option"
+                                                :class="{ 'is-checked': isShiftOt(s.id, modalDate, shift.key) }"
+                                                @click.stop
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    :checked="isShiftOt(s.id, modalDate, shift.key)"
+                                                    :disabled="saving"
+                                                    @change="$event.target.checked ? openOtMultiplierModal(s, shift, 'ot') : setStaffShiftPay(s.id, shift.key, 'ot', false)"
+                                                />
+                                                <span>{{ isShiftOt(s.id, modalDate, shift.key) ? formatOtMultiplier(getShiftOtMultiplier(s.id, modalDate, shift.key)) : 'Ca OT' }}</span>
+                                            </label>
+                                            <label
+                                                class="ot-option"
+                                                :class="{ 'is-checked': isShiftHoliday(s.id, modalDate, shift.key) }"
+                                                @click.stop
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    :checked="isShiftHoliday(s.id, modalDate, shift.key)"
+                                                    :disabled="saving"
+                                                    @change="$event.target.checked ? openOtMultiplierModal(s, shift, 'holiday') : setStaffShiftPay(s.id, shift.key, 'holiday', false)"
+                                                />
+                                                <span>{{ isShiftHoliday(s.id, modalDate, shift.key) ? formatOtMultiplier(getShiftOtMultiplier(s.id, modalDate, shift.key)) : 'Ca lễ' }}</span>
+                                            </label>
                                             <div class="sri-toggle">
                                                 <div class="toggle-track">
                                                     <div class="toggle-thumb" :style="hasShift(s.id, modalDate, shift.key) ? { backgroundColor: shift.color } : {}">
@@ -369,6 +506,64 @@ const hasShift = (staffId, date, key) => {
                         </div>
                         <div class="modal-footer">
                             <button class="btn-done" @click="showModal = false">Hoàn tất</button>
+                        </div>
+                    </div>
+                </div>
+            </Transition>
+        </Teleport>
+
+        <!-- OT Multiplier Modal -->
+        <Teleport to="body">
+            <Transition name="modal">
+                <div v-if="otModal.show" class="modal-overlay" @click="otModal.show = false">
+                    <div class="modal-content modal-content--ot" @click.stop>
+                        <div class="modal-header ot-modal-header">
+                            <div>
+                                <h3>{{ otModal.payType === 'holiday' ? 'Thiết lập ca lễ' : 'Thiết lập OT' }}</h3>
+                                <p class="modal-subtitle">Áp dụng hệ số lương cho ca này</p>
+                            </div>
+                            <button class="close-btn" @click="otModal.show = false">
+                                <X :size="20" />
+                            </button>
+                        </div>
+                        <div class="modal-body ot-modal-body">
+                            <div class="ot-context">
+                                <div>
+                                    <span>Nhân viên</span>
+                                    <strong>{{ otModal.staffName }}</strong>
+                                </div>
+                                <div>
+                                    <span>Ca làm</span>
+                                    <strong>{{ otModal.shiftName }}</strong>
+                                </div>
+                            </div>
+
+                            <div class="ot-rate-box">
+                                <div class="ot-rate-head">
+                                    <span>Hệ số lương</span>
+                                    <strong>{{ formatOtMultiplier(otModal.multiplier) }}</strong>
+                                </div>
+                                <div class="ot-input-shell">
+                                    <input
+                                        v-model.number="otModal.multiplier"
+                                        type="number"
+                                        min="1"
+                                        max="10"
+                                        step="1"
+                                        placeholder="2"
+                                        class="ot-multiplier-input"
+                                        @keyup.enter="confirmOtMultiplier"
+                                    />
+                                    <span>x lương/giờ</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer ot-modal-footer">
+                            <button class="btn-cancel" @click="otModal.show = false">Hủy</button>
+                            <button class="btn-save" @click="confirmOtMultiplier" :disabled="saving">
+                                <span v-if="saving" class="spinner-mini"></span>
+                                {{ otModal.payType === 'holiday' ? 'Lưu ca lễ' : 'Lưu ca OT' }}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -555,6 +750,10 @@ const hasShift = (staffId, date, key) => {
 }
 .modal-content--wide { max-width: 800px; }
 .modal-content--large { max-width: 1000px; }
+.modal-content--ot {
+    max-width: 420px;
+    border-radius: 18px;
+}
 
 .modal-header {
     padding: 24px;
@@ -570,6 +769,67 @@ const hasShift = (staffId, date, key) => {
     font-size: 1.25rem;
     font-weight: 800;
     color: #1e293b;
+}
+
+.ot-modal-body {
+    padding: 20px 24px 24px;
+}
+
+.ot-context {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.ot-context div {
+    min-width: 0;
+}
+
+.ot-context span,
+.ot-rate-head span {
+    display: block;
+    color: #94a3b8;
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+}
+
+.ot-context strong {
+    display: block;
+    color: #1e293b;
+    font-size: 0.95rem;
+    font-weight: 800;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ot-rate-box {
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 14px;
+    background: #ffffff;
+}
+
+.ot-rate-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.ot-rate-head span {
+    margin-bottom: 0;
+}
+
+.ot-rate-head strong {
+    color: #2D4F1E;
+    font-size: 1rem;
+    font-weight: 900;
 }
 
 .close-btn {
@@ -604,6 +864,11 @@ const hasShift = (staffId, date, key) => {
     display: flex;
     justify-content: flex-end;
     flex-shrink: 0;
+}
+
+.ot-modal-footer {
+    justify-content: flex-end;
+    gap: 10px;
 }
 
 @media (max-width: 1024px) {
@@ -789,6 +1054,7 @@ const hasShift = (staffId, date, key) => {
     flex: 1;
     display: flex;
     flex-direction: column;
+    min-width: 0;
 }
 
 .sri-name {
@@ -805,6 +1071,34 @@ const hasShift = (staffId, date, key) => {
 
 .is-active .sri-name { color: #166534; }
 .is-active .sri-status { color: #22c55e; }
+
+.ot-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border-radius: 10px;
+    background: #f8fafc;
+    color: #64748b;
+    border: 1px solid #e2e8f0;
+    font-size: 0.72rem;
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.ot-option input {
+    width: 14px;
+    height: 14px;
+    accent-color: #f59e0b;
+    cursor: pointer;
+}
+
+.ot-option.is-checked {
+    background: #fffbeb;
+    border-color: #fbbf24;
+    color: #92400e;
+}
 
 .sri-toggle {
     display: flex;
@@ -925,6 +1219,7 @@ const hasShift = (staffId, date, key) => {
 }
 
 .field-group input[type="text"],
+.field-group input[type="number"],
 .time-input-wrap input {
     width: 100%;
     padding: 10px 14px;
@@ -937,6 +1232,50 @@ const hasShift = (staffId, date, key) => {
     background: #f8fafc;
     font-family: 'Inter', sans-serif;
     box-sizing: border-box;
+}
+
+.ot-field {
+    margin-bottom: 0;
+}
+
+.ot-input-shell {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 14px;
+    height: 52px;
+    border-radius: 10px;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+}
+
+.ot-input-shell:focus-within {
+    background: white;
+    border-color: #2D4F1E;
+    box-shadow: 0 0 0 4px rgba(45, 79, 30, 0.08);
+}
+
+.ot-input-shell span {
+    color: #64748b;
+    font-size: 0.82rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.ot-input-shell input {
+    width: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: #1e293b;
+    font-size: 1.35rem;
+    font-weight: 900;
+    padding: 0;
+}
+
+.ot-input-shell input::-webkit-outer-spin-button,
+.ot-input-shell input::-webkit-inner-spin-button {
+    margin: 0;
 }
 
 .field-group input:focus {

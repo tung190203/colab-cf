@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Attendance;
 use App\Models\Booking;
 use App\Models\Payroll;
+use App\Models\PenaltyRule;
 use App\Models\Shift;
 use App\Models\StaffSchedule;
 use App\Models\User;
@@ -13,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 
 class AdminController extends Controller
 {
@@ -234,6 +236,74 @@ class AdminController extends Controller
         return response()->json(['message' => 'Xóa nhân viên thành công']);
     }
 
+    // ─── Penalty Rules ───────────────────────────────────────────────────────
+
+    public function getPenaltyRules(Request $request)
+    {
+        $query = PenaltyRule::query()->orderByDesc('is_active')->orderBy('name');
+
+        if ($request->filled('type')) {
+            $query->where('type', $request->query('type'));
+        }
+
+        if ($request->boolean('active_only')) {
+            $query->where('is_active', true);
+        }
+
+        if ($request->filled('search')) {
+            $search = trim((string) $request->query('search'));
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+
+        return response()->json(['items' => $query->get()]);
+    }
+
+    public function storePenaltyRule(Request $request)
+    {
+        $data = $request->validate([
+            'type' => 'required|in:bonus,penalty',
+            'name' => 'required|string|max:255',
+            'amount' => 'required|integer|min:0',
+            'description' => 'nullable|string',
+            'is_active' => 'boolean',
+        ]);
+
+        $rule = PenaltyRule::create([
+            ...$data,
+            'is_active' => $request->boolean('is_active', true),
+        ]);
+
+        return response()->json(['message' => 'Đã thêm quy định phạt', 'item' => $rule], 201);
+    }
+
+    public function updatePenaltyRule(Request $request, PenaltyRule $penaltyRule)
+    {
+        $data = $request->validate([
+            'type' => 'required|in:bonus,penalty',
+            'name' => 'required|string|max:255',
+            'amount' => 'required|integer|min:0',
+            'description' => 'nullable|string',
+            'is_active' => 'boolean',
+        ]);
+
+        $penaltyRule->update([
+            ...$data,
+            'is_active' => $request->boolean('is_active'),
+        ]);
+
+        return response()->json(['message' => 'Đã cập nhật quy định phạt', 'item' => $penaltyRule]);
+    }
+
+    public function destroyPenaltyRule(PenaltyRule $penaltyRule)
+    {
+        $penaltyRule->delete();
+
+        return response()->json(['message' => 'Đã xóa quy định phạt']);
+    }
+
     // ─── Schedule ─────────────────────────────────────────────────────────────
 
     public function getSchedule(Request $request)
@@ -341,6 +411,13 @@ class AdminController extends Controller
 
     public function savePayroll(Request $request)
     {
+        foreach (['bonus_details', 'deduction_details'] as $field) {
+            if ($request->has($field) && is_string($request->input($field))) {
+                $decoded = json_decode($request->input($field), true);
+                $request->merge([$field => is_array($decoded) ? $decoded : []]);
+            }
+        }
+
         $request->validate([
             'staff_id'     => 'required|exists:users,id',
             'month'        => 'required|integer|between:1,12',
@@ -352,6 +429,11 @@ class AdminController extends Controller
             'note'         => 'nullable|string',
             'bonus_details' => 'nullable|array',
             'deduction_details' => 'nullable|array',
+            'deduction_details.*.penalty_rule_id' => 'required_with:deduction_details|integer|exists:penalty_rules,id',
+            'deduction_details.*.reason' => 'nullable|string|max:1000',
+            'deduction_details.*.evidence_path' => 'nullable|string|max:2048',
+            'deduction_evidences' => 'nullable|array',
+            'deduction_evidences.*' => 'nullable|file|max:5120',
             'is_settled' => 'boolean',
             'status' => 'nullable|in:draft,pending_approval,approved',
         ]);
@@ -370,7 +452,11 @@ class AdminController extends Controller
             ->where('year', $request->year)
             ->first();
 
-        if ($existingPayroll && ($existingPayroll->status === 'approved' || $existingPayroll->is_settled)) {
+        $existingStatus = $existingPayroll
+            ? ($existingPayroll->status ?: ($existingPayroll->is_settled ? 'approved' : 'draft'))
+            : null;
+
+        if ($existingStatus === 'approved') {
             return response()->json(['message' => 'Bảng lương đã quyết toán, không thể sửa'], 422);
         }
 
@@ -378,9 +464,11 @@ class AdminController extends Controller
         $summary = $this->calculatePayrollSummary((int) $request->staff_id, (int) $request->month, (int) $request->year, $hourly);
         $hours = $summary['worked_hours'];
         $calcBase = $summary['calculated_salary'];
-        $bonusDetails = $this->mergeAutoBonusDetails($summary['bonus_details'], $request->bonus_details ?? []);
+        $manualBonusDetails = $this->normalizePayrollRuleDetails($request->bonus_details ?? [], 'bonus');
+        $bonusDetails = $this->mergeAutoBonusDetails($summary['bonus_details'], $manualBonusDetails);
         $bonus = collect($bonusDetails)->sum(fn($item) => (int) ($item['amount'] ?? 0));
-        $deduction = (int) ($request->deduction ?? 0);
+        $deductionDetails = $this->normalizePayrollDeductions($request, $request->deduction_details ?? []);
+        $deduction = collect($deductionDetails)->sum(fn($item) => (int) ($item['amount'] ?? 0));
         $total     = max(0, $calcBase + $bonus - $deduction);
         $isSettled = $targetStatus === 'approved';
 
@@ -395,7 +483,7 @@ class AdminController extends Controller
                 'total'             => $total,
                 'note'              => $request->note,
                 'bonus_details'     => $bonusDetails,
-                'deduction_details' => $request->deduction_details,
+                'deduction_details' => $deductionDetails,
                 'is_settled'        => $isSettled,
                 'status'            => $targetStatus,
                 'submitted_at'      => $targetStatus === 'pending_approval' ? now() : null,
@@ -819,15 +907,21 @@ class AdminController extends Controller
         $summary = $this->calculatePayrollSummary($staffId, $month, $year, $hourlyRate);
         $workedHours = $summary['worked_hours'];
         $calculatedSalary = $summary['calculated_salary'];
-        $bonusDetails = $this->mergeAutoBonusDetails($summary['bonus_details'], $payroll->bonus_details ?? []);
+        $bonusDetails = $this->mergeAutoBonusDetails(
+            $summary['bonus_details'],
+            $this->normalizePayrollRuleDetails($payroll->bonus_details ?? [], 'bonus')
+        );
         $bonus = collect($bonusDetails)->sum(fn($item) => (int) ($item['amount'] ?? 0));
-        $deduction = (int) $payroll->deduction;
+        $deductionDetails = $this->normalizeStoredPayrollDeductions($payroll->deduction_details ?? []);
+        $deduction = collect($deductionDetails)->sum(fn($item) => (int) ($item['amount'] ?? 0));
 
         $payroll->update([
             'worked_hours' => $workedHours,
             'calculated_salary' => $calculatedSalary,
             'bonus' => $bonus,
             'bonus_details' => $bonusDetails,
+            'deduction' => $deduction,
+            'deduction_details' => $deductionDetails,
             'total' => max(0, $calculatedSalary + $bonus - $deduction),
         ]);
     }
@@ -883,7 +977,9 @@ class AdminController extends Controller
             $multiplier = $isSpecialPayShift ? (float) ($schedule->ot_multiplier ?: 2) : 1;
             $workedHours += $hours;
             $calculatedSalary += (int) round($hours * $hourlyRate * $multiplier);
-            $eligibleMealShifts++;
+            if ($hours >= 7) {
+                $eligibleMealShifts++;
+            }
 
             if ($isSpecialPayShift) {
                 $breakdown['ot_hours'] += $hours;
@@ -954,5 +1050,132 @@ class AdminController extends Controller
             ->all();
 
         return array_values(array_merge($autoDetails, $manualDetails));
+    }
+
+    private function normalizePayrollDeductions(Request $request, array $details): array
+    {
+        if (empty($details)) {
+            return [];
+        }
+
+        $ruleIds = collect($details)
+            ->pluck('penalty_rule_id')
+            ->filter()
+            ->map(fn($id) => (int) $id)
+            ->unique()
+            ->values();
+        $rules = PenaltyRule::whereIn('id', $ruleIds)->where('type', 'penalty')->get()->keyBy('id');
+
+        return collect($details)
+            ->map(function ($item, $index) use ($request, $rules) {
+                $ruleId = (int) ($item['penalty_rule_id'] ?? 0);
+                $rule = $rules->get($ruleId);
+
+                if (!$rule) {
+                    return null;
+                }
+
+                $evidencePath = $item['evidence_path'] ?? null;
+                $file = $request->file("deduction_evidences.{$index}");
+                if ($file) {
+                    if ($evidencePath) {
+                        Storage::disk('public')->delete($evidencePath);
+                    }
+                    $evidencePath = $file->store('payroll-penalties', 'public');
+                }
+
+                return [
+                    'penalty_rule_id' => $rule->id,
+                    'label' => $rule->name,
+                    'unit_amount' => (int) $rule->amount,
+                    'quantity' => max(1, (int) ($item['quantity'] ?? 1)),
+                    'amount' => (int) $rule->amount * max(1, (int) ($item['quantity'] ?? 1)),
+                    'reason' => trim((string) ($item['reason'] ?? '')),
+                    'evidence_path' => $evidencePath,
+                    'evidence_name' => $file ? $file->getClientOriginalName() : ($item['evidence_name'] ?? null),
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    private function normalizePayrollRuleDetails(array $details, string $type): array
+    {
+        if (empty($details)) {
+            return [];
+        }
+
+        $ruleIds = collect($details)
+            ->pluck('rule_id')
+            ->filter()
+            ->map(fn($id) => (int) $id)
+            ->unique()
+            ->values();
+        $rules = PenaltyRule::whereIn('id', $ruleIds)->where('type', $type)->get()->keyBy('id');
+
+        return collect($details)
+            ->map(function ($item) use ($rules) {
+                $ruleId = (int) ($item['rule_id'] ?? 0);
+                $rule = $rules->get($ruleId);
+
+                if (!$rule) {
+                    return null;
+                }
+
+                $quantity = max(1, (int) ($item['quantity'] ?? 1));
+
+                return [
+                    'rule_id' => $rule->id,
+                    'label' => $rule->name,
+                    'unit_amount' => (int) $rule->amount,
+                    'quantity' => $quantity,
+                    'amount' => (int) $rule->amount * $quantity,
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    private function normalizeStoredPayrollDeductions(array $details): array
+    {
+        if (empty($details)) {
+            return [];
+        }
+
+        $ruleIds = collect($details)
+            ->pluck('penalty_rule_id')
+            ->filter()
+            ->map(fn($id) => (int) $id)
+            ->unique()
+            ->values();
+        $rules = PenaltyRule::whereIn('id', $ruleIds)->where('type', 'penalty')->get()->keyBy('id');
+
+        return collect($details)
+            ->map(function ($item) use ($rules) {
+                $ruleId = (int) ($item['penalty_rule_id'] ?? 0);
+                $rule = $rules->get($ruleId);
+
+                if (!$rule) {
+                    return null;
+                }
+
+                $quantity = max(1, (int) ($item['quantity'] ?? 1));
+
+                return [
+                    'penalty_rule_id' => $rule->id,
+                    'label' => $rule->name,
+                    'unit_amount' => (int) $rule->amount,
+                    'quantity' => $quantity,
+                    'amount' => (int) $rule->amount * $quantity,
+                    'reason' => trim((string) ($item['reason'] ?? '')),
+                    'evidence_path' => $item['evidence_path'] ?? null,
+                    'evidence_name' => $item['evidence_name'] ?? null,
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
     }
 }

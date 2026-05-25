@@ -21,6 +21,7 @@ import AdminBookingSetup from '../components/admin/AdminBookingSetup.vue';
 import AdminAttendance from '../components/admin/AdminAttendance.vue';
 import AdminCustomerStats from '../components/admin/AdminCustomerStats.vue';
 import AdminAuditLogs from '../components/admin/AdminAuditLogs.vue';
+import AdminPenaltyRules from '../components/admin/AdminPenaltyRules.vue';
 
 // Staff components
 import StaffAttendance from '../components/staff/StaffAttendance.vue';
@@ -50,6 +51,7 @@ const routes = [
   { path: '/admin/schedule', component: AdminSchedule, name: 'AdminSchedule', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
   { path: '/admin/attendance', component: AdminAttendance, name: 'AdminAttendance', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
   { path: '/admin/audit-logs', component: AdminAuditLogs, name: 'AdminAuditLogs', meta: { requiresAuth: true, roles: ['admin'] } },
+  { path: '/admin/penalty-rules', component: AdminPenaltyRules, name: 'AdminPenaltyRules', meta: { requiresAuth: true, roles: ['admin'] } },
   { path: '/admin/payroll', component: AdminPayroll, name: 'AdminPayroll', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
   { path: '/admin/menu', component: AdminMenu, name: 'AdminMenu', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
   { path: '/admin/booking-setup', component: AdminBookingSetup, name: 'AdminBookingSetup', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },

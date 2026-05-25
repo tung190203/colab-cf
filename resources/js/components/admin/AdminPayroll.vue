@@ -10,6 +10,8 @@ const now = new Date();
 const selectedMonth = ref(now.getMonth() + 1);
 const selectedYear = ref(now.getFullYear());
 const payrollData = ref([]);
+const bonusRules = ref([]);
+const penaltyRules = ref([]);
 const loading = ref(true);
 const editModal = ref(false);
 const saving = ref(false);
@@ -37,7 +39,23 @@ async function fetchPayroll() {
     finally { loading.value = false; }
 }
 
-onMounted(fetchPayroll);
+onMounted(() => {
+    fetchPayroll();
+    fetchAdjustmentRules();
+});
+
+async function fetchAdjustmentRules() {
+    try {
+        const [bonusRes, penaltyRes] = await Promise.all([
+            axios.get('/api/admin/penalty-rules?type=bonus', { headers: authHeader() }),
+            axios.get('/api/admin/penalty-rules?type=penalty', { headers: authHeader() }),
+        ]);
+        bonusRules.value = bonusRes.data.items || [];
+        penaltyRules.value = penaltyRes.data.items || [];
+    } catch (e) {
+        toast.error('Không thể tải danh mục thưởng/phạt');
+    }
+}
 
 function openEdit(item) {
     const hourly = Number(item.payroll?.hourly_rate ?? item.hourly_rate ?? 0);
@@ -55,14 +73,18 @@ function openEdit(item) {
         note: item.payroll?.note ?? '',
         is_settled: Boolean(item.payroll?.is_settled),
         status: item.payroll?.status ?? (item.payroll?.is_settled ? 'approved' : 'draft'),
-        bonus_details: Array.isArray(item.payroll?.bonus_details) ? [...item.payroll.bonus_details] : (Array.isArray(item.bonus_details) ? [...item.bonus_details] : []),
-        deduction_details: Array.isArray(item.payroll?.deduction_details) ? [...item.payroll.deduction_details] : [],
+        bonus_details: Array.isArray(item.payroll?.bonus_details)
+            ? item.payroll.bonus_details.map(b => ({ ...b, quantity: Number(b.quantity || 1), is_legacy: !b.label?.startsWith('[AUTO]') && !b.rule_id }))
+            : (Array.isArray(item.bonus_details) ? item.bonus_details.map(b => ({ ...b, quantity: Number(b.quantity || 1), is_legacy: !b.label?.startsWith('[AUTO]') && !b.rule_id })) : []),
+        deduction_details: Array.isArray(item.payroll?.deduction_details)
+            ? item.payroll.deduction_details.map(d => ({ ...d, evidence_file: null }))
+            : [],
     };
     if (editForm.value.bonus_details.length === 0 && editForm.value.bonus > 0) {
-        editForm.value.bonus_details.push({ label: 'Thưởng/Phụ cấp', amount: editForm.value.bonus });
+        editForm.value.bonus_details.push({ label: 'Phụ cấp', amount: editForm.value.bonus, quantity: 1, is_legacy: true });
     }
     if (editForm.value.deduction_details.length === 0 && editForm.value.deduction > 0) {
-        editForm.value.deduction_details.push({ label: 'Giảm trừ', amount: editForm.value.deduction });
+        editForm.value.deduction_details.push({ label: 'Giảm trừ', amount: editForm.value.deduction, reason: '', evidence_file: null });
     }
     editModal.value = true;
 }
@@ -77,11 +99,33 @@ function calcTotals() {
     editForm.value.deduction = dSum;
 }
 
-function addBonus() { editForm.value.bonus_details.push({ label: '', amount: 0 }); calcTotals(); }
+function addBonus() { editForm.value.bonus_details.push({ rule_id: '', label: '', unit_amount: 0, quantity: 1, amount: 0 }); calcTotals(); }
 function removeBonus(idx) { editForm.value.bonus_details.splice(idx, 1); calcTotals(); }
 
-function addDeduction() { editForm.value.deduction_details.push({ label: '', amount: 0 }); calcTotals(); }
+function addDeduction() { editForm.value.deduction_details.push({ penalty_rule_id: '', label: '', unit_amount: 0, quantity: 1, amount: 0, reason: '', evidence_path: null, evidence_name: null, evidence_file: null }); calcTotals(); }
 function removeDeduction(idx) { editForm.value.deduction_details.splice(idx, 1); calcTotals(); }
+
+function applyBonusRule(b) {
+    const rule = bonusRules.value.find(p => Number(p.id) === Number(b.rule_id));
+    b.label = rule?.name || '';
+    b.unit_amount = Number(rule?.amount || 0);
+    b.amount = b.unit_amount * Math.max(1, Number(b.quantity || 1));
+    calcTotals();
+}
+
+function applyPenaltyRule(d) {
+    const rule = penaltyRules.value.find(p => Number(p.id) === Number(d.penalty_rule_id));
+    d.label = rule?.name || '';
+    d.unit_amount = Number(rule?.amount || 0);
+    d.amount = d.unit_amount * Math.max(1, Number(d.quantity || 1));
+    calcTotals();
+}
+
+function updateRuleQuantity(item) {
+    item.quantity = Math.max(1, Number(item.quantity || 1));
+    item.amount = Number(item.unit_amount || 0) * item.quantity;
+    calcTotals();
+}
 
 
 async function savePayroll() {
@@ -89,25 +133,60 @@ async function savePayroll() {
     try {
         const isSettled = adminUser.value?.role === 'admin' && editForm.value.status === 'approved';
         editForm.value.worked_hours = roundHours(editForm.value.worked_hours);
+        for (const b of editForm.value.bonus_details.filter(item => !item.label?.startsWith('[AUTO]') && !item.is_legacy)) {
+            if (!b.rule_id) {
+                toast.warning('Vui lòng chọn danh mục thưởng');
+                saving.value = false;
+                return;
+            }
+            if (Number(b.quantity || 0) < 1) {
+                toast.warning('Số lượt thưởng phải từ 1');
+                saving.value = false;
+                return;
+            }
+        }
+        for (const d of editForm.value.deduction_details) {
+            if (!d.penalty_rule_id) {
+                toast.warning('Vui lòng chọn khoản phạt');
+                saving.value = false;
+                return;
+            }
+        }
 
-        await axios.post('/api/admin/payroll', {
-            staff_id: editForm.value.staff_id,
-            month: selectedMonth.value,
-            year: selectedYear.value,
-            hourly_rate: editForm.value.hourly_rate,
-            worked_hours: editForm.value.worked_hours,
-            bonus: editForm.value.bonus,
-            deduction: editForm.value.deduction,
-            note: editForm.value.note,
-            bonus_details: editForm.value.bonus_details,
-            deduction_details: editForm.value.deduction_details,
-            is_settled: isSettled,
-            status: editForm.value.status,
-        }, { headers: authHeader() });
+        const deductionDetails = editForm.value.deduction_details.map((d, index) => ({
+            penalty_rule_id: d.penalty_rule_id,
+            quantity: d.quantity,
+            reason: d.reason,
+            evidence_path: d.evidence_path,
+            evidence_name: d.evidence_name,
+            index,
+        }));
+        const formData = new FormData();
+        formData.append('staff_id', editForm.value.staff_id);
+        formData.append('month', selectedMonth.value);
+        formData.append('year', selectedYear.value);
+        formData.append('hourly_rate', editForm.value.hourly_rate);
+        formData.append('worked_hours', editForm.value.worked_hours);
+        formData.append('bonus', editForm.value.bonus);
+        formData.append('deduction', editForm.value.deduction);
+        formData.append('note', editForm.value.note || '');
+        formData.append('bonus_details', JSON.stringify(editForm.value.bonus_details
+            .filter(b => !b.label?.startsWith('[AUTO]') && !b.is_legacy)
+            .map(b => ({ rule_id: b.rule_id, quantity: b.quantity }))));
+        formData.append('deduction_details', JSON.stringify(deductionDetails));
+        formData.append('is_settled', isSettled ? 1 : 0);
+        formData.append('status', editForm.value.status);
+        editForm.value.deduction_details.forEach((d, index) => {
+            if (d.evidence_file) {
+                formData.append(`deduction_evidences[${index}]`, d.evidence_file);
+            }
+        });
+
+        await axios.post('/api/admin/payroll', formData, { headers: authHeader() });
         toast.success('Đã lưu bảng lương');
         editModal.value = false;
         fetchPayroll();
-    } catch (e) { toast.error('Có lỗi khi lưu'); }
+    } catch (e) { toast.error(e.response?.data?.message || 'Có lỗi khi lưu'); }
     finally { saving.value = false; }
 }
 
@@ -144,6 +223,12 @@ function fmtNoUnit(v) {
 function parseMoney(v) {
     let val = v.replace(/\D/g, '');
     return val ? parseInt(val) : 0;
+}
+
+function evidenceUrl(path) {
+    if (!path) return '';
+    if (String(path).startsWith('http')) return path;
+    return `/storage/${path}`;
 }
 
 const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
@@ -205,8 +290,8 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
                             <th>Giờ làm</th>
                             <th>Lương/Giờ</th>
                             <th>Lương tính</th>
-                            <th>Thưởng</th>
-                            <th>Khấu trừ</th>
+                            <th>Phụ cấp</th>
+                            <th>Phạt</th>
                             <th>Thực nhận</th>
                             <th>Trạng thái</th>
                             <th>Thao tác</th>
@@ -247,7 +332,7 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
                             </td>
                             <td>
                                 <button class="pr-edit-btn" @click="openEdit(item)">
-                                    {{ item.payroll ? (item.payroll.is_settled ? 'Xem chi tiết' : 'Chỉnh sửa') : 'Tính lương' }}
+                                    {{ item.payroll ? (payrollStatus(item).text === 'Đã quyết toán' ? 'Xem chi tiết' : 'Chỉnh sửa') : 'Tính lương' }}
                                 </button>
                             </td>
                         </tr>
@@ -288,28 +373,87 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
                                 </div>
                             </div>
                             <div class="pr-edit-field pr-edit-field--full">
-                                <label>Thưởng / Phụ cấp</label>
+                                <label>Phụ cấp</label>
                                 <div class="pr-details-list">
                                     <div v-for="(b, i) in editForm.bonus_details" :key="'b'+i" class="pr-detail-item">
-                                        <input v-model="b.label" type="text" placeholder="Tên khoản (VD: Phụ cấp xăng xe...)" class="pr-di-name" :disabled="editForm.status === 'approved' || b.label?.startsWith('[AUTO]')" />
-                                        <input :value="fmtNoUnit(b.amount)" @input="e => { b.amount = parseMoney(e.target.value); calcTotals(); }" type="text" placeholder="0" class="pr-di-val" :disabled="editForm.status === 'approved' || b.label?.startsWith('[AUTO]')" />
-                                        <button v-if="editForm.status !== 'approved' && !b.label?.startsWith('[AUTO]')" class="pr-di-btn" @click="removeBonus(i)">✕</button>
+                                        <template v-if="b.label?.startsWith('[AUTO]') || b.is_legacy">
+                                            <div class="pr-di-field pr-di-field--name">
+                                                <span>Khoản</span>
+                                                <input :value="b.label" type="text" class="pr-di-name" disabled />
+                                            </div>
+                                            <div class="pr-di-field">
+                                                <span>Thành tiền</span>
+                                                <input :value="fmtNoUnit(b.amount)" type="text" placeholder="0" class="pr-di-val" disabled />
+                                            </div>
+                                        </template>
+                                        <template v-else>
+                                            <div class="pr-di-field pr-di-field--name">
+                                                <span>Danh mục</span>
+                                                <select v-model="b.rule_id" class="pr-di-name" :disabled="editForm.status === 'approved'" @change="applyBonusRule(b)">
+                                                    <option value="">-- Chọn danh mục thưởng --</option>
+                                                    <option v-for="rule in bonusRules" :key="rule.id" :value="rule.id" :disabled="!rule.is_active && Number(rule.id) !== Number(b.rule_id)">
+                                                        {{ rule.name }} - {{ fmt(rule.amount) }}/lượt{{ rule.is_active ? '' : ' (tạm ẩn)' }}
+                                                    </option>
+                                                </select>
+                                            </div>
+                                            <div class="pr-di-field">
+                                                <span>Số lượt</span>
+                                                <input v-model.number="b.quantity" @input="updateRuleQuantity(b)" type="number" min="1" class="pr-di-qty" :disabled="editForm.status === 'approved'" />
+                                            </div>
+                                            <div class="pr-di-field">
+                                                <span>Thành tiền</span>
+                                                <input :value="fmtNoUnit(b.amount)" type="text" placeholder="0" class="pr-di-val" disabled />
+                                            </div>
+                                        </template>
+                                        <div v-if="editForm.status !== 'approved' && !b.label?.startsWith('[AUTO]')" class="pr-di-action">
+                                            <span></span>
+                                            <button class="pr-di-btn" @click="removeBonus(i)">✕</button>
+                                        </div>
                                     </div>
                                     <button v-if="editForm.status !== 'approved'" class="pr-add-btn" @click="addBonus">+ Thêm khoản thưởng</button>
                                 </div>
-                                <div class="pr-sub-total">Tổng thưởng: <strong class="pr-green">{{ fmt(editForm.bonus) }}</strong></div>
+                                <div class="pr-sub-total">Tổng phụ cấp: <strong class="pr-green">{{ fmt(editForm.bonus) }}</strong></div>
                             </div>
                             <div class="pr-edit-field pr-edit-field--full">
-                                <label>Khấu trừ / Phạt</label>
+                                <label>Phạt</label>
                                 <div class="pr-details-list">
                                     <div v-for="(d, i) in editForm.deduction_details" :key="'d'+i" class="pr-detail-item">
-                                        <input v-model="d.label" type="text" placeholder="Tên khoản (VD: Đi trễ...)" class="pr-di-name" :disabled="editForm.status === 'approved'" />
-                                        <input :value="fmtNoUnit(d.amount)" @input="e => { d.amount = parseMoney(e.target.value); calcTotals(); }" type="text" placeholder="0" class="pr-di-val" :disabled="editForm.status === 'approved'" />
-                                        <button v-if="editForm.status !== 'approved'" class="pr-di-btn" @click="removeDeduction(i)">✕</button>
+                                        <div class="pr-di-field pr-di-field--name">
+                                            <span>Danh mục</span>
+                                            <select v-model="d.penalty_rule_id" class="pr-di-name" :disabled="editForm.status === 'approved'" @change="applyPenaltyRule(d)">
+                                                <option value="">-- Chọn khoản phạt --</option>
+                                                <option v-for="rule in penaltyRules" :key="rule.id" :value="rule.id" :disabled="!rule.is_active && Number(rule.id) !== Number(d.penalty_rule_id)">
+                                                    {{ rule.name }} - {{ fmt(rule.amount) }}/lượt{{ rule.is_active ? '' : ' (tạm ẩn)' }}
+                                                </option>
+                                            </select>
+                                        </div>
+                                        <div class="pr-di-field">
+                                            <span>Số lượt</span>
+                                            <input v-model.number="d.quantity" @input="updateRuleQuantity(d)" type="number" min="1" class="pr-di-qty" :disabled="editForm.status === 'approved'" />
+                                        </div>
+                                        <div class="pr-di-field">
+                                            <span>Thành tiền</span>
+                                            <input :value="fmtNoUnit(d.amount)" type="text" placeholder="0" class="pr-di-val" disabled />
+                                        </div>
+                                        <div v-if="editForm.status !== 'approved'" class="pr-di-action">
+                                            <span></span>
+                                            <button class="pr-di-btn" @click="removeDeduction(i)">✕</button>
+                                        </div>
+                                        <div class="pr-di-field pr-di-field--full">
+                                            <span>Lý do (không bắt buộc)</span>
+                                            <textarea v-model="d.reason" rows="2" class="pr-di-reason" placeholder="Lý do phạt..." :disabled="editForm.status === 'approved'"></textarea>
+                                        </div>
+                                        <div class="pr-di-field pr-di-field--full pr-di-evidence">
+                                            <span>Bằng chứng (không bắt buộc)</span>
+                                            <input type="file" accept="image/*,.pdf" :disabled="editForm.status === 'approved'" @change="e => d.evidence_file = e.target.files?.[0] || null" />
+                                            <a v-if="d.evidence_path" :href="evidenceUrl(d.evidence_path)" target="_blank">Xem bằng chứng</a>
+                                            <span v-else-if="d.evidence_file">{{ d.evidence_file.name }}</span>
+                                            <span v-else>Chưa có bằng chứng</span>
+                                        </div>
                                     </div>
-                                    <button v-if="editForm.status !== 'approved'" class="pr-add-btn" @click="addDeduction">+ Thêm khoản khấu trừ</button>
+                                    <button v-if="editForm.status !== 'approved'" class="pr-add-btn" @click="addDeduction">+ Thêm khoản phạt</button>
                                 </div>
-                                <div class="pr-sub-total">Tổng khấu trừ: <strong class="pr-red">{{ fmt(editForm.deduction) }}</strong></div>
+                                <div class="pr-sub-total">Tổng phạt: <strong class="pr-red">{{ fmt(editForm.deduction) }}</strong></div>
                             </div>
                             <div class="pr-edit-field">
                                 <label>Thực nhận</label>
@@ -470,7 +614,7 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
 }
 .pr-modal {
     background: white; border-radius: 24px;
-    width: 100%; max-width: 520px;
+    width: 100%; max-width: 760px;
     box-shadow: 0 24px 60px rgba(0,0,0,0.2);
     display: flex; flex-direction: column;
     max-height: 90vh;
@@ -539,20 +683,58 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
 
 /* CSS for dynamic list */
 .pr-details-list {
-    display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;
+    display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px;
 }
 .pr-detail-item {
-    display: flex; gap: 8px; align-items: center;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 92px 150px 36px;
+    gap: 10px;
+    align-items: end;
+    padding: 12px;
+    border: 1px solid #e5ebf2;
+    border-radius: 12px;
+    background: #fbfcfe;
+}
+.pr-di-field {
+    display: flex; flex-direction: column; gap: 5px; min-width: 0;
+}
+.pr-di-field > span {
+    color: #64748b; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; height: 16px; line-height: 16px;
+}
+.pr-di-field--name {
+    min-width: 0;
+}
+.pr-di-field--full {
+    grid-column: 1 / -1;
 }
 .pr-di-name {
-    flex: 2; padding: 8px 12px; border: 1px solid #e0e6ed; border-radius: 8px; font-size: 0.85rem;
+    width: 100%; height: 44px; box-sizing: border-box; padding: 0 12px; border: 1px solid #e0e6ed; border-radius: 8px; font-size: 0.85rem; min-width: 0; background: #fff;
 }
 .pr-di-val {
-    flex: 1; padding: 8px 12px; border: 1px solid #e0e6ed; border-radius: 8px; font-size: 0.85rem;
+    width: 100%; height: 44px; box-sizing: border-box; padding: 0 12px; border: 1px solid #e0e6ed; border-radius: 8px; font-size: 0.85rem;
+}
+.pr-di-qty {
+    width: 100%; height: 44px; box-sizing: border-box; padding: 0 10px; border: 1px solid #e0e6ed; border-radius: 8px; font-size: 0.85rem;
+}
+.pr-di-action {
+    display: flex; flex-direction: column; gap: 5px; align-items: stretch;
+}
+.pr-di-action > span {
+    height: 16px;
 }
 .pr-di-btn {
-    background: #fee2e2; color: #ef4444; border: none; width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; cursor: pointer;
+    background: #fee2e2; color: #ef4444; border: none; width: 36px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 1.15rem; line-height: 1;
 }
+.pr-di-reason {
+    width: 100%; padding: 8px 12px; border: 1px solid #e0e6ed; border-radius: 8px; font-size: 0.85rem; resize: vertical;
+}
+.pr-di-evidence {
+    color: #64748b; font-size: 0.85rem;
+}
+.pr-di-evidence input {
+    width: 100%; border: 1px solid #e0e6ed; border-radius: 8px; padding: 7px 10px;
+}
+.pr-di-evidence a { color: #2563eb; font-weight: 700; }
 .pr-add-btn {
     background: none; border: 1px dashed #cbd5e1; color: #64748b; padding: 8px; border-radius: 8px; font-size: 0.85rem; cursor: pointer; text-align: center; font-weight: 500; margin-top: 4px;
 }
@@ -568,6 +750,14 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
 
     .pr-filter-group {
         flex: 1;
+    }
+
+    .pr-detail-item {
+        grid-template-columns: 1fr;
+    }
+
+    .pr-di-btn {
+        width: 100%;
     }
 
     .pr-summary {

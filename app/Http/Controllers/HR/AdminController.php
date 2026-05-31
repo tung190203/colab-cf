@@ -389,7 +389,12 @@ class AdminController extends Controller
             $payroll = Payroll::where('staff_id', $u->id)
                 ->where('month', $month)->where('year', $year)->first();
 
-            $summary = $this->calculatePayrollSummary($u->id, (int) $month, (int) $year, (int) $u->hourly_rate);
+            $hourlyRate = $payroll ? (int) $payroll->hourly_rate : (int) $u->hourly_rate;
+            $summary = $this->calculatePayrollSummary($u->id, (int) $month, (int) $year, $hourlyRate);
+
+            if ($payroll && !$payroll->is_settled) {
+                $payroll = $this->syncDraftPayrollWithSummary($payroll, $summary);
+            }
 
             return [
                 'staff_id'     => $u->id,
@@ -905,6 +910,11 @@ class AdminController extends Controller
 
         $hourlyRate = (int) $payroll->hourly_rate;
         $summary = $this->calculatePayrollSummary($staffId, $month, $year, $hourlyRate);
+        $this->syncDraftPayrollWithSummary($payroll, $summary);
+    }
+
+    private function syncDraftPayrollWithSummary(Payroll $payroll, array $summary): Payroll
+    {
         $workedHours = $summary['worked_hours'];
         $calculatedSalary = $summary['calculated_salary'];
         $bonusDetails = $this->mergeAutoBonusDetails(
@@ -924,6 +934,8 @@ class AdminController extends Controller
             'deduction_details' => $deductionDetails,
             'total' => max(0, $calculatedSalary + $bonus - $deduction),
         ]);
+
+        return $payroll->refresh();
     }
 
     private function calculateWorkedHours(int $staffId, int $month, int $year): float

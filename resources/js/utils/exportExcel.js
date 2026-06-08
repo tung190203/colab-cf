@@ -1,12 +1,4 @@
-function escapeHtml(value) {
-    return String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;')
-        .replace(/\n/g, '<br>');
-}
+import * as XLSX from 'xlsx';
 
 function normalizeFileName(name) {
     return String(name || 'export')
@@ -15,48 +7,39 @@ function normalizeFileName(name) {
         .replace(/\s+/g, '_');
 }
 
+function valueForColumn(column, row) {
+    return typeof column.value === 'function' ? column.value(row) : row[column.key];
+}
+
+function fitColumns(columns, rows) {
+    return columns.map(column => {
+        const headerLength = String(column.header || '').length;
+        const maxValueLength = rows.reduce((max, row) => {
+            const value = valueForColumn(column, row);
+            return Math.max(max, String(value ?? '').length);
+        }, headerLength);
+
+        return { wch: Math.min(Math.max(maxValueLength + 2, 10), 42) };
+    });
+}
+
 export function exportRowsToExcel({ columns, rows, fileName, sheetName }) {
-    const headerHtml = columns
-        .map(column => `<th>${escapeHtml(column.header)}</th>`)
-        .join('');
+    const data = rows.map(row => {
+        return columns.reduce((item, column) => {
+            item[column.header] = valueForColumn(column, row) ?? '';
+            return item;
+        }, {});
+    });
 
-    const bodyHtml = rows
-        .map(row => {
-            const cells = columns.map(column => {
-                const value = typeof column.value === 'function' ? column.value(row) : row[column.key];
-                return `<td>${escapeHtml(value)}</td>`;
-            }).join('');
+    const worksheet = XLSX.utils.json_to_sheet(data, {
+        header: columns.map(column => column.header),
+    });
+    worksheet['!cols'] = fitColumns(columns, rows);
 
-            return `<tr>${cells}</tr>`;
-        })
-        .join('');
-
-    const html = `
-        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
-            <head>
-                <meta charset="UTF-8" />
-                <style>
-                    table { border-collapse: collapse; }
-                    th, td { border: 1px solid #d9d9d9; padding: 6px 8px; font-family: Arial, sans-serif; font-size: 11pt; }
-                    th { background: #f3f4f6; font-weight: 700; }
-                </style>
-            </head>
-            <body>
-                <table>
-                    <thead><tr>${headerHtml}</tr></thead>
-                    <tbody>${bodyHtml}</tbody>
-                </table>
-            </body>
-        </html>
-    `;
-
-    const blob = new Blob(['\ufeff', html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${normalizeFileName(fileName || sheetName)}.xls`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, String(sheetName || 'Sheet1').slice(0, 31));
+    XLSX.writeFile(workbook, `${normalizeFileName(fileName || sheetName)}.xlsx`, {
+        bookType: 'xlsx',
+        compression: true,
+    });
 }

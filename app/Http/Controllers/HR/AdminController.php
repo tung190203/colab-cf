@@ -525,7 +525,21 @@ class AdminController extends Controller
         $attendances = Attendance::whereMonth('date', $month)
             ->whereYear('date', $year)
             ->when($staffId, fn($query) => $query->where('staff_id', $staffId))
+            ->get();
+
+        $latestAdjustmentLogs = DB::table('attendance_adjustment_logs as logs')
+            ->leftJoin('users as editor', 'logs.adjusted_by', '=', 'editor.id')
+            ->whereIn('logs.attendance_id', $attendances->pluck('id')->filter()->values())
+            ->orderByDesc('logs.created_at')
+            ->select([
+                'logs.*',
+                'editor.name as editor_name',
+            ])
             ->get()
+            ->groupBy('attendance_id')
+            ->map(fn($logs) => $logs->first());
+
+        $attendances = $attendances
             ->keyBy(fn($item) => $item->staff_id . '_' . $item->date->format('Y-m-d') . '_' . $item->shift);
         $shifts = Shift::all()->keyBy('key');
 
@@ -534,10 +548,24 @@ class AdminController extends Controller
             ->map(function ($schedule) use ($attendances, $shifts) {
                 $date = $schedule->date->format('Y-m-d');
                 $attendance = $attendances->get($schedule->staff_id . '_' . $date . '_' . $schedule->shift);
+                $latestLog = $attendance ? $latestAdjustmentLogs->get($attendance->id) : null;
                 $shift = $shifts->get($schedule->shift);
                 $payableHours = ($attendance && $shift)
                     ? $this->calculatePayableHoursForSchedule($schedule, $attendance, $shift)
                     : 0;
+
+                $adjustmentChanges = [];
+                if ($latestLog) {
+                    if ((string) $latestLog->old_check_in_at !== (string) $latestLog->new_check_in_at) {
+                        $adjustmentChanges[] = 'Giờ vào';
+                    }
+                    if ((string) $latestLog->old_check_out_at !== (string) $latestLog->new_check_out_at) {
+                        $adjustmentChanges[] = 'Giờ ra';
+                    }
+                    if ((string) $latestLog->old_note !== (string) $latestLog->new_note) {
+                        $adjustmentChanges[] = 'Ghi chú';
+                    }
+                }
 
                 return [
                     'id' => $schedule->id . '_admin_attendance',
@@ -558,6 +586,9 @@ class AdminController extends Controller
                     'note' => $attendance?->note,
                     'is_manual_adjusted' => (bool) ($attendance?->is_manual_adjusted ?? false),
                     'adjusted_at' => $attendance?->adjusted_at,
+                    'adjusted_by_name' => $latestLog?->editor_name,
+                    'latest_adjustment_at' => $latestLog?->created_at,
+                    'latest_adjustment_changes' => $adjustmentChanges,
                 ];
             })
             ->values();

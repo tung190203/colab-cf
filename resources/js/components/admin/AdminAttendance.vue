@@ -98,6 +98,17 @@ function formatDate(value) {
     return date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+function formatDateTime(value) {
+    if (!value) return '';
+    return new Date(value).toLocaleString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+    });
+}
+
 function calcHours(checkIn, checkOut) {
     if (!checkIn || !checkOut) return 0;
     return Math.max(0, (new Date(checkOut) - new Date(checkIn)) / 3600000);
@@ -111,6 +122,12 @@ function statusOf(record) {
     if (record.check_out_at) return { text: 'Hoàn thành', className: 'done' };
     if (record.check_in_at) return { text: 'Thiếu giờ ra', className: 'warn' };
     return { text: 'Vắng mặt', className: 'absent' };
+}
+
+function adjustmentText(record) {
+    const changes = record.latest_adjustment_changes || [];
+    if (changes.length) return changes.join(', ');
+    return record.is_manual_adjusted ? 'Đã chỉnh thủ công' : '';
 }
 
 function openEdit(record) {
@@ -164,6 +181,7 @@ async function saveAttendance() {
 const workedShifts = computed(() => records.value.filter(item => item.check_in_at).length);
 const absentShifts = computed(() => records.value.filter(item => !item.check_in_at).length);
 const incompleteShifts = computed(() => records.value.filter(item => item.check_in_at && !item.check_out_at).length);
+const adjustedShifts = computed(() => records.value.filter(item => item.is_manual_adjusted).length);
 const totalHours = computed(() => {
     const sum = records.value.reduce((total, item) => total + Number(item.payable_hours || 0), 0);
     return sum.toFixed(1);
@@ -222,6 +240,11 @@ const totalHours = computed(() => {
                     <span class="aa-card-label">Thiếu giờ ra</span>
                     <strong>{{ incompleteShifts }}</strong>
                 </div>
+                <div class="aa-card adjusted">
+                    <ClipboardCheck :size="20" />
+                    <span class="aa-card-label">Đã sửa</span>
+                    <strong>{{ adjustedShifts }}</strong>
+                </div>
             </div>
 
             <div class="aa-table-section">
@@ -245,12 +268,13 @@ const totalHours = computed(() => {
                                 <th>Giờ ra</th>
                                 <th>Số giờ</th>
                                 <th>Trạng thái</th>
+                                <th>Chỉnh sửa</th>
                                 <th>Thao tác</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr v-if="records.length === 0">
-                                <td colspan="8" class="aa-empty">Chưa có dữ liệu chấm công.</td>
+                                <td colspan="9" class="aa-empty">Chưa có dữ liệu chấm công.</td>
                             </tr>
                             <tr v-for="record in records" :key="record.id">
                                 <td>
@@ -272,6 +296,17 @@ const totalHours = computed(() => {
                                     <span class="aa-badge" :class="statusOf(record).className">
                                         {{ statusOf(record).text }}
                                     </span>
+                                </td>
+                                <td>
+                                    <div v-if="record.is_manual_adjusted" class="aa-adjusted-cell">
+                                        <span class="aa-adjusted-badge">Đã sửa</span>
+                                        <small>{{ adjustmentText(record) }}</small>
+                                        <em v-if="record.latest_adjustment_at">
+                                            {{ formatDateTime(record.latest_adjustment_at) }}
+                                            <template v-if="record.adjusted_by_name"> bởi {{ record.adjusted_by_name }}</template>
+                                        </em>
+                                    </div>
+                                    <span v-else class="aa-not-adjusted">Gốc</span>
                                 </td>
                                 <td>
                                     <button class="aa-edit-btn" @click="openEdit(record)">Sửa công</button>
@@ -433,6 +468,10 @@ const totalHours = computed(() => {
     color: #15803d;
 }
 
+.aa-card.adjusted svg {
+    color: #b45309;
+}
+
 .aa-card-label {
     color: #64748b;
     font-size: 0.85rem;
@@ -497,7 +536,7 @@ const totalHours = computed(() => {
 
 .aa-table {
     width: 100%;
-    min-width: 880px;
+    min-width: 1040px;
     border-collapse: collapse;
 }
 
@@ -575,6 +614,45 @@ const totalHours = computed(() => {
 .aa-badge.absent {
     background: #fee2e2;
     color: #dc2626;
+}
+
+.aa-adjusted-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    min-width: 150px;
+}
+
+.aa-adjusted-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    background: #fff7ed;
+    color: #c2410c;
+    border: 1px solid #fed7aa;
+    padding: 5px 9px;
+    font-size: 0.76rem;
+    font-weight: 900;
+}
+
+.aa-adjusted-cell small {
+    color: #334155;
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.aa-adjusted-cell em {
+    color: #64748b;
+    font-size: 0.74rem;
+    font-style: normal;
+    line-height: 1.35;
+}
+
+.aa-not-adjusted {
+    color: #94a3b8;
+    font-size: 0.8rem;
+    font-weight: 700;
 }
 
 .aa-edit-btn {

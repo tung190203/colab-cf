@@ -4,7 +4,8 @@ import AdminLayout from './AdminLayout.vue';
 import { useAdminAuth } from '../../composables/useAdminAuth';
 import { toast } from 'vue3-toastify';
 import axios from 'axios';
-import { CalendarCheck, CalendarX, Clock, ClipboardCheck, RotateCcw, UserRound } from 'lucide-vue-next';
+import { CalendarCheck, CalendarX, Clock, ClipboardCheck, Download, RotateCcw, UserRound } from 'lucide-vue-next';
+import { exportRowsToExcel } from '../../utils/exportExcel';
 
 const { authHeader } = useAdminAuth();
 const now = new Date();
@@ -130,6 +131,34 @@ function adjustmentText(record) {
     return record.is_manual_adjusted ? 'Đã chỉnh thủ công' : '';
 }
 
+function exportAttendance() {
+    if (!records.value.length) {
+        toast.warning('Không có dữ liệu chấm công để export');
+        return;
+    }
+
+    exportRowsToExcel({
+        fileName: `bang_cham_cong_${String(selectedMonth.value).padStart(2, '0')}_${selectedYear.value}`,
+        sheetName: 'Cham cong',
+        columns: [
+            { header: 'Nhân viên', value: record => record.staff_name || '' },
+            { header: 'Vai trò', value: record => record.staff_role === 'shift_leader' ? 'Trưởng ca' : 'Nhân viên' },
+            { header: 'Ngày', value: record => formatDate(record.date) },
+            { header: 'Ca', value: record => getShiftName(record.shift) },
+            { header: 'Giờ vào', value: record => formatTime(record.check_in_at) },
+            { header: 'Giờ ra', value: record => formatTime(record.check_out_at) },
+            { header: 'Số giờ tính lương', value: record => Number(record.payable_hours || 0).toFixed(1) },
+            { header: 'Trạng thái', value: record => statusOf(record).text },
+            { header: 'Đã sửa', value: record => record.is_manual_adjusted ? 'Có' : 'Không' },
+            { header: 'Nội dung sửa', value: record => adjustmentText(record) },
+            { header: 'Sửa lúc', value: record => formatDateTime(record.latest_adjustment_at) },
+            { header: 'Người sửa', value: record => record.adjusted_by_name || '' },
+            { header: 'Ghi chú', value: record => record.note || '' },
+        ],
+        rows: records.value,
+    });
+}
+
 function openEdit(record) {
     editForm.value = {
         staff_id: record.staff_id,
@@ -217,6 +246,10 @@ const totalHours = computed(() => {
                     <RotateCcw :size="16" />
                     Tải lại
                 </button>
+                <button class="aa-export" @click="exportAttendance" :disabled="loading || records.length === 0">
+                    <Download :size="16" />
+                    Export Excel
+                </button>
             </div>
 
             <div class="aa-summary">
@@ -300,11 +333,6 @@ const totalHours = computed(() => {
                                 <td>
                                     <div v-if="record.is_manual_adjusted" class="aa-adjusted-cell">
                                         <span class="aa-adjusted-badge">Đã sửa</span>
-                                        <small>{{ adjustmentText(record) }}</small>
-                                        <em v-if="record.latest_adjustment_at">
-                                            {{ formatDateTime(record.latest_adjustment_at) }}
-                                            <template v-if="record.adjusted_by_name"> bởi {{ record.adjusted_by_name }}</template>
-                                        </em>
                                     </div>
                                     <span v-else class="aa-not-adjusted">Gốc</span>
                                 </td>
@@ -433,18 +461,34 @@ const totalHours = computed(() => {
     outline: none;
 }
 
-.aa-refresh {
+.aa-refresh,
+.aa-export {
     height: 42px;
     border: 0;
     border-radius: 10px;
-    background: #1f2937;
-    color: #fff;
     padding: 0 16px;
     display: inline-flex;
     align-items: center;
     gap: 8px;
     font-weight: 700;
     cursor: pointer;
+}
+
+.aa-refresh {
+    background: #1f2937;
+    color: #fff;
+}
+
+.aa-export {
+    background: #fff;
+    color: #2D4F1E;
+    border: 1px solid #cbd5e1;
+}
+
+.aa-export:disabled {
+    color: #94a3b8;
+    cursor: not-allowed;
+    background: #f8fafc;
 }
 
 .aa-summary {
@@ -543,7 +587,7 @@ const totalHours = computed(() => {
 
 .aa-table {
     width: 100%;
-    min-width: 1440px;
+    min-width: 1280px;
     border-collapse: collapse;
 }
 
@@ -630,10 +674,8 @@ const totalHours = computed(() => {
 
 .aa-adjusted-cell {
     display: flex;
-    flex-direction: column;
     align-items: flex-start;
-    gap: 4px;
-    min-width: 260px;
+    min-width: 90px;
     white-space: nowrap;
 }
 
@@ -647,21 +689,6 @@ const totalHours = computed(() => {
     padding: 5px 9px;
     font-size: 0.76rem;
     font-weight: 900;
-}
-
-.aa-adjusted-cell small {
-    color: #334155;
-    font-size: 0.78rem;
-    font-weight: 800;
-    white-space: nowrap;
-}
-
-.aa-adjusted-cell em {
-    color: #64748b;
-    font-size: 0.74rem;
-    font-style: normal;
-    line-height: 1.35;
-    white-space: nowrap;
 }
 
 .aa-not-adjusted {
@@ -882,7 +909,8 @@ const totalHours = computed(() => {
 
     .aa-filter-group,
     .aa-filter-group:first-child,
-    .aa-refresh {
+    .aa-refresh,
+    .aa-export {
         width: 100%;
         min-width: 0;
     }

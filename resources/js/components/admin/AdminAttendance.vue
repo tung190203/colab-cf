@@ -448,12 +448,17 @@ const totalHours = computed(() => {
 }
 
 .aa-summary {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    display: flex;
+    align-items: stretch;
     gap: 14px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
 }
 
 .aa-card {
+    min-width: 190px;
+    flex: 1 0 190px;
     background: #fff;
     border: 1px solid #edf2f7;
     border-radius: 14px;
@@ -531,12 +536,14 @@ const totalHours = computed(() => {
 }
 
 .aa-table-wrap {
+    width: 100%;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .aa-table {
     width: 100%;
-    min-width: 1040px;
+    min-width: 1440px;
     border-collapse: collapse;
 }
 
@@ -548,6 +555,7 @@ const totalHours = computed(() => {
     text-align: left;
     font-size: 0.76rem;
     text-transform: uppercase;
+    white-space: nowrap;
 }
 
 .aa-table td {
@@ -555,12 +563,14 @@ const totalHours = computed(() => {
     border-bottom: 1px solid #f1f5f9;
     color: #334155;
     vertical-align: middle;
+    white-space: nowrap;
 }
 
 .aa-staff {
     display: flex;
     align-items: center;
     gap: 10px;
+    min-width: 220px;
 }
 
 .aa-staff img,
@@ -584,6 +594,7 @@ const totalHours = computed(() => {
     display: block;
     color: #111827;
     font-size: 0.95rem;
+    white-space: nowrap;
 }
 
 .aa-staff small {
@@ -599,6 +610,7 @@ const totalHours = computed(() => {
     padding: 6px 10px;
     font-size: 0.78rem;
     font-weight: 800;
+    white-space: nowrap;
 }
 
 .aa-badge.done {
@@ -621,7 +633,8 @@ const totalHours = computed(() => {
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
-    min-width: 150px;
+    min-width: 260px;
+    white-space: nowrap;
 }
 
 .aa-adjusted-badge {
@@ -640,6 +653,7 @@ const totalHours = computed(() => {
     color: #334155;
     font-size: 0.78rem;
     font-weight: 800;
+    white-space: nowrap;
 }
 
 .aa-adjusted-cell em {
@@ -647,6 +661,7 @@ const totalHours = computed(() => {
     font-size: 0.74rem;
     font-style: normal;
     line-height: 1.35;
+    white-space: nowrap;
 }
 
 .aa-not-adjusted {
@@ -870,10 +885,6 @@ const totalHours = computed(() => {
     .aa-refresh {
         width: 100%;
         min-width: 0;
-    }
-
-    .aa-summary {
-        grid-template-columns: repeat(2, 1fr);
     }
 
     .aa-table-section {

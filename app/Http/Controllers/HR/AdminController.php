@@ -545,7 +545,7 @@ class AdminController extends Controller
 
         $records = $schedules
             ->filter(fn($schedule) => $schedule->date->format('Y-m-d') <= $today)
-            ->map(function ($schedule) use ($attendances, $shifts) {
+            ->map(function ($schedule) use ($attendances, $latestAdjustmentLogs, $shifts) {
                 $date = $schedule->date->format('Y-m-d');
                 $attendance = $attendances->get($schedule->staff_id . '_' . $date . '_' . $schedule->shift);
                 $latestLog = $attendance ? $latestAdjustmentLogs->get($attendance->id) : null;

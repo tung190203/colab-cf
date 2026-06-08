@@ -23,6 +23,21 @@ function fitColumns(columns, rows) {
     });
 }
 
+function applyColumnFormats(worksheet, columns, rowCount) {
+    columns.forEach((column, colIndex) => {
+        if (!column.numberFormat) return;
+
+        for (let rowIndex = 1; rowIndex <= rowCount; rowIndex++) {
+            const cellAddress = XLSX.utils.encode_cell({ c: colIndex, r: rowIndex });
+            const cell = worksheet[cellAddress];
+
+            if (cell && typeof cell.v === 'number') {
+                cell.z = column.numberFormat;
+            }
+        }
+    });
+}
+
 export function exportRowsToExcel({ columns, rows, fileName, sheetName }) {
     const data = rows.map(row => {
         return columns.reduce((item, column) => {
@@ -35,6 +50,7 @@ export function exportRowsToExcel({ columns, rows, fileName, sheetName }) {
         header: columns.map(column => column.header),
     });
     worksheet['!cols'] = fitColumns(columns, rows);
+    applyColumnFormats(worksheet, columns, rows.length);
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, String(sheetName || 'Sheet1').slice(0, 31));

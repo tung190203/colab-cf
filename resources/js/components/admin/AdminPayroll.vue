@@ -4,6 +4,8 @@ import AdminLayout from './AdminLayout.vue';
 import { useAdminAuth } from '../../composables/useAdminAuth';
 import { toast } from 'vue3-toastify';
 import axios from 'axios';
+import { Download } from 'lucide-vue-next';
+import { exportRowsToExcel } from '../../utils/exportExcel';
 
 const { adminUser, authHeader } = useAdminAuth();
 const now = new Date();
@@ -200,6 +202,51 @@ function computedTotal(item) {
     return Math.max(0, calculated + bonus - ded);
 }
 
+function payrollBaseSalary(item) {
+    return item.payroll
+        ? Number(item.payroll.calculated_salary)
+        : Number(item.calculated_salary ?? Math.round(Number(item.hourly_rate) * Number(item.worked_hours)));
+}
+
+function detailText(details) {
+    if (!Array.isArray(details) || details.length === 0) return '';
+    return details
+        .map(item => {
+            const label = item.label || item.name || 'Khoản';
+            const quantity = item.quantity ? ` x${item.quantity}` : '';
+            const reason = item.reason ? ` (${item.reason})` : '';
+            return `${label}${quantity}: ${fmt(item.amount || 0)}${reason}`;
+        })
+        .join('\n');
+}
+
+function exportPayroll() {
+    if (!payrollData.value.length) {
+        toast.warning('Không có dữ liệu bảng lương để export');
+        return;
+    }
+
+    exportRowsToExcel({
+        fileName: `bang_luong_${String(selectedMonth.value).padStart(2, '0')}_${selectedYear.value}`,
+        sheetName: 'Bang luong',
+        columns: [
+            { header: 'Nhân viên', value: item => item.name || '' },
+            { header: 'Vai trò', value: item => item.role === 'shift_leader' ? 'Trưởng ca' : 'Nhân viên' },
+            { header: 'Giờ làm', value: item => fmtHours(item.payroll?.worked_hours ?? item.worked_hours) },
+            { header: 'Lương/giờ', value: item => Number(item.payroll?.hourly_rate ?? item.hourly_rate ?? 0) },
+            { header: 'Lương tính', value: item => payrollBaseSalary(item) },
+            { header: 'Phụ cấp', value: item => Number(item.payroll ? item.payroll.bonus : item.bonus ?? 0) },
+            { header: 'Chi tiết phụ cấp', value: item => detailText(item.payroll?.bonus_details ?? item.bonus_details) },
+            { header: 'Phạt', value: item => Number(item.payroll?.deduction ?? 0) },
+            { header: 'Chi tiết phạt', value: item => detailText(item.payroll?.deduction_details) },
+            { header: 'Thực nhận', value: item => computedTotal(item) },
+            { header: 'Trạng thái', value: item => payrollStatus(item).text },
+            { header: 'Ghi chú', value: item => item.payroll?.note || '' },
+        ],
+        rows: payrollData.value,
+    });
+}
+
 function payrollStatus(item) {
     if (!item.payroll) return { text: 'Chưa lập', className: 'pr-status--pending' };
     const status = item.payroll.status || (item.payroll.is_settled ? 'approved' : 'draft');
@@ -259,6 +306,10 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
                         <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
                     </svg>
                     Tải lại
+                </button>
+                <button class="pr-export-btn" @click="exportPayroll" :disabled="loading || payrollData.length === 0">
+                    <Download :size="16" />
+                    Export Excel
                 </button>
             </div>
 
@@ -321,7 +372,7 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
                                 <span>{{ fmtHours(item.payroll?.worked_hours ?? item.worked_hours) }}h</span>
                             </td>
                             <td>{{ fmt(item.payroll?.hourly_rate ?? item.hourly_rate ?? 0) }}</td>
-                            <td>{{ fmt(item.payroll ? item.payroll.calculated_salary : Number(item.calculated_salary ?? Math.round(Number(item.hourly_rate) * Number(item.worked_hours)))) }}</td>
+                            <td>{{ fmt(payrollBaseSalary(item)) }}</td>
                             <td class="pr-green">{{ fmt(item.payroll ? item.payroll.bonus : item.bonus ?? 0) }}</td>
                             <td class="pr-red">{{ item.payroll ? fmt(item.payroll.deduction) : '—' }}</td>
                             <td class="pr-total">{{ fmt(computedTotal(item)) }}</td>
@@ -514,7 +565,8 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
     font-family: 'Inter', sans-serif;
 }
 
-.pr-refresh-btn {
+.pr-refresh-btn,
+.pr-export-btn {
     display: flex; align-items: center; gap: 6px;
     padding: 9px 16px;
     border: 1.5px solid #e0e6ed;
@@ -528,6 +580,19 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
     font-family: 'Inter', sans-serif;
 }
 .pr-refresh-btn:hover { border-color: #2D4F1E; color: #2D4F1E; }
+.pr-export-btn {
+    color: #2D4F1E;
+}
+.pr-export-btn:hover {
+    border-color: #2D4F1E;
+    background: rgba(45,79,30,0.06);
+}
+.pr-export-btn:disabled {
+    color: #aaa;
+    cursor: not-allowed;
+    background: #fafbfc;
+    border-color: #e0e6ed;
+}
 
 .pr-summary {
     display: grid;
@@ -750,6 +815,12 @@ const MONTHS = ['01','02','03','04','05','06','07','08','09','10','11','12'];
 
     .pr-filter-group {
         flex: 1;
+    }
+
+    .pr-refresh-btn,
+    .pr-export-btn {
+        width: 100%;
+        justify-content: center;
     }
 
     .pr-detail-item {

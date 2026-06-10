@@ -14,7 +14,7 @@ import {
     XCircle,
 } from 'lucide-vue-next';
 
-const { authHeader, adminUser } = useAdminAuth();
+const { authHeader } = useAdminAuth();
 
 const loading = ref(false);
 const saving = ref(false);
@@ -24,6 +24,8 @@ const handovers = ref([]);
 const selected = ref(null);
 const disputeNote = ref('');
 const exportMonth = ref(new Date().toISOString().slice(0, 7));
+const productSearch = ref('');
+const menuProducts = ref([]);
 const filters = ref({
     date: '',
     shift_type: '',
@@ -34,6 +36,29 @@ const filters = ref({
 const form = ref(defaultForm());
 
 const pendingHandovers = computed(() => handovers.value.filter((item) => item.status === 'pending'));
+const selectedProductIds = computed(() => form.value.sold_products.map((item) => Number(item.product_id)));
+const selectedSoldProducts = computed(() => (
+    form.value.sold_products
+        .map((item) => {
+            const product = menuProducts.value.find((p) => Number(p.id) === Number(item.product_id));
+            return product ? { item, product } : null;
+        })
+        .filter(Boolean)
+));
+const filteredProducts = computed(() => {
+    const search = productSearch.value.trim().toLowerCase();
+    return menuProducts.value
+        .filter((product) => !selectedProductIds.value.includes(Number(product.id)))
+        .filter((product) => {
+            if (!search) return true;
+            return [product.name, product.category, product.sku]
+                .filter(Boolean)
+                .some((value) => String(value).toLowerCase().includes(search));
+        });
+});
+const soldProductTotalQuantity = computed(() => (
+    form.value.sold_products.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
+));
 
 const cashDiff = computed(() => {
     return Number(form.value.cash_actual || 0) - Number(form.value.cash_theoretical || 0);
@@ -49,6 +74,7 @@ function defaultForm() {
         total_orders: 0,
         revenue_cash: 0,
         revenue_transfer: 0,
+        sold_products: [],
         materials: [],
         equipment_checklist: {
             may_pha: { ok: true, note: '' },
@@ -87,14 +113,20 @@ function statusLabel(status) {
     }[status] || status;
 }
 
-function materialDiff(item) {
-    return Number(item.theoretical || 0) - Number(item.actual || 0);
+function addSoldProduct(product) {
+    form.value.sold_products.push({
+        product_id: product.id,
+        quantity: 1,
+    });
+    productSearch.value = '';
 }
 
-function materialDiffPercent(item) {
-    const theoretical = Number(item.theoretical || 0);
-    const diff = Math.abs(materialDiff(item));
-    return theoretical > 0 ? (diff / theoretical) * 100 : (diff ? 100 : 0);
+function removeSoldProduct(productId) {
+    form.value.sold_products = form.value.sold_products.filter((item) => Number(item.product_id) !== Number(productId));
+}
+
+function normalizeSoldProductQuantity(item) {
+    item.quantity = Math.max(1, Number(item.quantity || 1));
 }
 
 async function fetchPrepare() {
@@ -102,6 +134,7 @@ async function fetchPrepare() {
     try {
         const res = await axios.get('/api/shift-handover/prepare', { headers: authHeader() });
         prepare.value = res.data;
+        menuProducts.value = res.data.products || [];
         form.value = {
             ...defaultForm(),
             date: res.data.date,
@@ -110,7 +143,7 @@ async function fetchPrepare() {
             total_orders: res.data.total_orders,
             revenue_cash: res.data.revenue_cash,
             revenue_transfer: res.data.revenue_transfer,
-            materials: res.data.materials.map((material) => ({
+            materials: (res.data.materials || []).map((material) => ({
                 material_id: material.id,
                 material_name: material.name,
                 unit: material.unit,
@@ -154,12 +187,6 @@ function resetFilters() {
 async function saveHandover() {
     if (Math.abs(cashDiff.value) > 50000 && !form.value.cash_note.trim()) {
         toast.warning('Vui lòng ghi chú lý do chênh lệch tiền mặt');
-        return;
-    }
-
-    const missingReason = form.value.materials.find((item) => materialDiffPercent(item) > 10 && !item.reason.trim());
-    if (missingReason) {
-        toast.warning(`Vui lòng ghi lý do chênh lệch NVL: ${missingReason.material_name}`);
         return;
     }
 
@@ -317,18 +344,44 @@ onMounted(async () => {
                     </div>
 
                     <div class="sh-block">
-                        <h4>Kiểm kê NVL</h4>
-                        <div class="sh-materials">
-                            <div class="sh-material-row head">
-                                <span>NVL</span><span>Lý thuyết</span><span>Thực tế</span><span>Lý do</span>
+                        <div class="sh-block-head">
+                            <div>
+                                <h4>Món đã bán trong ca</h4>
+                                <p>Chọn món và số lượng, hệ thống sẽ tự tính NVL theo công thức.</p>
                             </div>
-                            <div v-for="item in form.materials" :key="item.material_id" class="sh-material-row" :class="{ warn: materialDiffPercent(item) > 10 }">
-                                <strong>{{ item.material_name }}</strong>
-                                <span>{{ formatNumber(item.theoretical) }} {{ item.unit }}</span>
-                                <input v-model.number="item.actual" type="number" min="0" step="0.001" />
-                                <input v-model="item.reason" type="text" :placeholder="materialDiffPercent(item) > 10 ? 'Bắt buộc nhập lý do' : 'Ghi chú nếu có'" />
+                            <div class="sh-sold-total">{{ soldProductTotalQuantity }} món</div>
+                        </div>
+
+                        <div class="sh-product-picker">
+                            <input v-model="productSearch" type="search" placeholder="Tìm món theo tên, SKU hoặc nhóm..." />
+                            <div class="sh-product-results" v-if="filteredProducts.length">
+                                <button
+                                    v-for="product in filteredProducts"
+                                    :key="product.id"
+                                    type="button"
+                                    class="sh-product-option"
+                                    :class="{ warning: !product.has_recipe }"
+                                    @click="addSoldProduct(product)"
+                                >
+                                    <strong>{{ product.name }}</strong>
+                                    <span>{{ product.sku || 'Chưa có SKU' }} · {{ product.category }}</span>
+                                    <em v-if="!product.has_recipe">Chưa có công thức</em>
+                                </button>
                             </div>
                         </div>
+
+                        <div class="sh-sold-list" v-if="selectedSoldProducts.length">
+                            <div v-for="entry in selectedSoldProducts" :key="entry.item.product_id" class="sh-sold-row" :class="{ warning: !entry.product.has_recipe }">
+                                <div>
+                                    <strong>{{ entry.product.name }}</strong>
+                                    <span>{{ entry.product.sku || 'Chưa có SKU' }} · {{ entry.product.category }}</span>
+                                    <em v-if="!entry.product.has_recipe">Món này cần bổ sung công thức</em>
+                                </div>
+                                <input v-model.number="entry.item.quantity" type="number" min="1" @blur="normalizeSoldProductQuantity(entry.item)" />
+                                <button type="button" @click="removeSoldProduct(entry.item.product_id)">Xoá</button>
+                            </div>
+                        </div>
+                        <div v-else class="sh-inline-empty">Chưa chọn món nào trong ca</div>
                     </div>
 
                     <div class="sh-grid two">
@@ -405,6 +458,7 @@ onMounted(async () => {
                         <div class="sh-list-meta">
                             <span :class="handover.status">{{ statusLabel(handover.status) }}</span>
                             <em v-if="handover.has_alert"><AlertTriangle :size="16" /> Có cảnh báo</em>
+                            <em v-if="handover.dispute_note" class="dispute"><XCircle :size="16" /> Có ghi chú sai lệch</em>
                             <button @click="openDetail(handover)">Chi tiết</button>
                         </div>
                     </div>
@@ -428,16 +482,29 @@ onMounted(async () => {
                             <div class="sh-stats"><span>Order</span><strong>{{ selected.total_orders }}</strong></div>
                             <div class="sh-stats"><span>Doanh thu</span><strong>{{ formatMoney(selected.total_revenue) }}</strong></div>
                         </div>
-                        <h4>NVL</h4>
+                        <template v-if="selected.sold_products?.length">
+                            <h4>Món đã bán</h4>
+                            <div class="sh-sold-detail">
+                                <span v-for="product in selected.sold_products" :key="product.product_id">
+                                    {{ product.product_name }} x {{ product.quantity }}
+                                </span>
+                            </div>
+                        </template>
+                        <h4>NVL dự kiến theo công thức</h4>
                         <div class="sh-snapshot">
                             <div v-for="item in selected.nvl_snapshot" :key="item.material_id" class="sh-snapshot-row" :class="{ warn: item.has_alert }">
                                 <strong>{{ item.material_name }}</strong>
-                                <span>{{ formatNumber(item.theoretical) }} → {{ formatNumber(item.actual) }} {{ item.unit }}</span>
+                                <span>Cần {{ formatNumber(item.required ?? item.diff) }} {{ item.unit }}</span>
                                 <em v-if="item.reason">{{ item.reason }}</em>
                             </div>
+                            <div v-if="!selected.nvl_snapshot?.length" class="sh-empty compact">Chưa có dữ liệu NVL</div>
                         </div>
                         <h4>Ghi chú</h4>
                         <p class="sh-note">{{ selected.handover_note || 'Không có' }}</p>
+                        <template v-if="selected.dispute_note">
+                            <h4>Ghi chú sai lệch</h4>
+                            <p class="sh-note dispute">{{ selected.dispute_note }}</p>
+                        </template>
                         <template v-if="selected.status === 'pending'">
                             <div v-if="!selected.can_confirm" class="sh-schedule-warning">
                                 <AlertTriangle :size="18" />
@@ -472,6 +539,24 @@ onMounted(async () => {
 .sh-filters { display: grid; grid-template-columns: 160px 150px 180px minmax(180px, 1fr) auto auto; gap: 10px; margin-bottom: 16px; align-items: center; }
 .sh-header h3, .sh-block h4, .sh-modal-body h4 { margin: 0; color: #101828; }
 .sh-header p { margin: 4px 0 0; color: #667085; font-weight: 700; }
+.sh-block-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 14px; }
+.sh-block-head p { margin: 4px 0 0; color: #667085; font-size: 13px; font-weight: 700; }
+.sh-sold-total { min-width: 70px; padding: 8px 10px; border-radius: 8px; background: #f0fdf4; color: #15803d; text-align: center; font-weight: 900; }
+.sh-product-picker { display: flex; flex-direction: column; gap: 10px; }
+.sh-product-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; max-height: 320px; overflow-y: auto; padding-right: 4px; }
+.sh-product-option { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-height: 64px; padding: 10px 12px; border: 1px solid #e4e7ec; border-radius: 8px; background: #fff; color: #101828; text-align: left; cursor: pointer; }
+.sh-product-option:hover { border-color: #20451f; background: #f8fbf6; }
+.sh-product-option span, .sh-sold-row span { color: #667085; font-size: 12px; font-weight: 700; }
+.sh-product-option em, .sh-sold-row em { color: #c2410c; font-size: 12px; font-style: normal; font-weight: 800; }
+.sh-product-option.warning, .sh-sold-row.warning { border-color: #fed7aa; background: #fff7ed; }
+.sh-sold-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.sh-sold-row { display: grid; grid-template-columns: minmax(0, 1fr) 100px auto; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid #eaecf0; border-radius: 8px; }
+.sh-sold-row strong, .sh-sold-row span { display: block; }
+.sh-sold-row input { text-align: center; }
+.sh-sold-row button { min-height: 38px; border: 1px solid #fecaca; border-radius: 8px; background: #fff; color: #b42318; font-weight: 800; cursor: pointer; }
+.sh-inline-empty { padding: 14px; margin-top: 12px; border: 1px dashed #d0d5dd; border-radius: 8px; color: #667085; text-align: center; font-weight: 800; }
+.sh-sold-detail { display: flex; flex-wrap: wrap; gap: 8px; }
+.sh-sold-detail span { padding: 7px 10px; border-radius: 999px; background: #f2f4f7; color: #344054; font-weight: 800; }
 .sh-grid { display: grid; gap: 16px; margin-bottom: 16px; }
 .sh-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .sh-grid.compact { gap: 10px; margin-bottom: 0; }
@@ -500,6 +585,7 @@ textarea { resize: vertical; }
 .sh-secondary.danger { color: #b42318; border-color: #fecaca; }
 .sh-primary:disabled, .sh-secondary:disabled { opacity: .65; cursor: not-allowed; }
 .sh-empty { padding: 40px; text-align: center; color: #667085; }
+.sh-empty.compact { padding: 16px; }
 .sh-list { display: flex; flex-direction: column; gap: 10px; }
 .sh-list-item { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 14px; border: 1px solid #eaecf0; border-radius: 8px; }
 .sh-list-item strong, .sh-list-item span { display: block; }
@@ -509,6 +595,7 @@ textarea { resize: vertical; }
 .sh-list-meta > span.confirmed { background: #ecfdf3; color: #027a48; }
 .sh-list-meta > span.disputed { background: #fef3f2; color: #b42318; }
 .sh-list-meta em { display: inline-flex; align-items: center; gap: 5px; color: #c2410c; font-style: normal; font-weight: 800; }
+.sh-list-meta em.dispute { color: #b42318; }
 .sh-list-meta button { border: 1px solid #d0d5dd; border-radius: 8px; background: #fff; padding: 8px 10px; font-weight: 800; cursor: pointer; }
 .sh-modal-backdrop { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(16,24,40,.45); }
 .sh-modal { width: min(820px, 100%); max-height: calc(100vh - 40px); overflow-y: auto; background: #fff; border-radius: 8px; padding: 18px; }
@@ -518,7 +605,10 @@ textarea { resize: vertical; }
 .sh-snapshot-row { display: grid; grid-template-columns: 1fr 180px 1fr; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #eaecf0; }
 .sh-snapshot-row:last-child { border-bottom: 0; }
 .sh-note { margin: 0; padding: 12px; border-radius: 8px; background: #f9fafb; color: #344054; white-space: pre-line; }
+.sh-note.dispute { border: 1px solid #fecaca; background: #fef3f2; color: #991b1b; font-weight: 700; }
 @media (max-width: 768px) {
+    .sh-block-head, .sh-sold-row { grid-template-columns: 1fr; }
+    .sh-block-head { flex-direction: column; }
     .sh-grid.two, .sh-equipment-row, .sh-snapshot-row { grid-template-columns: 1fr; }
     .sh-filters { grid-template-columns: 1fr; }
     .sh-list-item, .sh-header { flex-direction: column; align-items: stretch; }

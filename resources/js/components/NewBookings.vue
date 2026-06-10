@@ -5,6 +5,7 @@ import { useBooking } from '../composables/useBooking';
 import { useAdminAuth } from '../composables/useAdminAuth';
 import { toast } from 'vue3-toastify';
 import AdminLayout from './admin/AdminLayout.vue';
+import ConfirmDialog from './ConfirmDialog.vue';
 import { 
     RefreshCw, 
     Clock, 
@@ -25,6 +26,12 @@ let modalInstance = null;
 const currentPage = ref(1);
 const itemsPerPage = 12;
 const loading = ref(true);
+const serving = ref(false);
+const canceling = ref(false);
+const stockChecking = ref(false);
+const stockCheck = ref(null);
+const actionError = ref('');
+const cancelConfirm = ref({ show: false, booking: null });
 
 const totalPages = computed(() => Math.ceil(bookingList.value.length / itemsPerPage));
 const paginatedBookingList = computed(() => {
@@ -33,6 +40,9 @@ const paginatedBookingList = computed(() => {
 });
 
 const visiblePageItems = computed(() => buildPageItems(currentPage.value, totalPages.value));
+const canServeSelectedBooking = computed(() => {
+  return !stockChecking.value && stockCheck.value?.ok !== false;
+});
 
 function buildPageItems(current, total) {
   if (total <= 7) {
@@ -60,6 +70,9 @@ function buildPageItems(current, total) {
 // Modal logic
 function openModal(booking) {
   selectedBooking.value = booking;
+  actionError.value = '';
+  stockCheck.value = null;
+  checkBookingStock(booking.id);
   nextTick(() => {
     if (!modalInstance) {
       const modalEl = document.getElementById('bookingModal');
@@ -68,6 +81,50 @@ function openModal(booking) {
     }
     modalInstance.show();
   });
+}
+
+async function checkBookingStock(bookingId) {
+  stockChecking.value = true;
+
+  try {
+    const res = await fetch(`/api/booking/${bookingId}/stock-check`, {
+      headers: authHeader()
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (selectedBooking.value?.id !== bookingId) return;
+
+    if (res.ok) {
+      stockCheck.value = data.stock_check;
+      actionError.value = data.stock_check?.ok === false ? data.stock_check.message : '';
+    } else {
+      stockCheck.value = { ok: false, message: responseMessage(data, 'Không thể kiểm tra tồn kho') };
+      actionError.value = stockCheck.value.message;
+    }
+  } catch (error) {
+    if (selectedBooking.value?.id !== bookingId) return;
+    stockCheck.value = { ok: false, message: 'Có lỗi xảy ra khi kiểm tra tồn kho' };
+    actionError.value = stockCheck.value.message;
+  } finally {
+    if (selectedBooking.value?.id === bookingId) {
+      stockChecking.value = false;
+    }
+  }
+}
+
+function responseMessage(data, fallback) {
+  if (data?.errors) {
+    return Object.values(data.errors).flat().join('\n');
+  }
+
+  return data?.message || fallback;
+}
+
+function removeBookingFromList(bookingId) {
+  bookingList.value = bookingList.value.filter(b => b.id !== bookingId);
+  if ((currentPage.value - 1) * itemsPerPage >= bookingList.value.length && currentPage.value > 1) {
+    currentPage.value--;
+  }
 }
 
 function goToPage(page) {
@@ -83,6 +140,19 @@ function formatBookingTime(start, end) {
 }
 
 async function markAsServed(bookingId) {
+  if (serving.value || canceling.value) return;
+  if (stockChecking.value) {
+    actionError.value = 'Đang kiểm tra tồn kho, vui lòng chờ một chút';
+    return;
+  }
+  if (stockCheck.value?.ok === false) {
+    actionError.value = stockCheck.value.message || 'Không đủ nguyên vật liệu để phục vụ đơn';
+    return;
+  }
+
+  serving.value = true;
+  actionError.value = '';
+
   try {
     const res = await fetch(`/api/booking/mark-as-served`, {
       method: 'POST',
@@ -92,17 +162,66 @@ async function markAsServed(bookingId) {
       },
       body: JSON.stringify({ booking_id: bookingId }),
     });
+    const data = await res.json().catch(() => ({}));
     
     if (res.ok) {
         toast.success('Đã xác nhận phục vụ!');
-        bookingList.value = bookingList.value.filter(b => b.id !== bookingId);
+        removeBookingFromList(bookingId);
         if (modalInstance) modalInstance.hide();
-        if ((currentPage.value - 1) * itemsPerPage >= bookingList.value.length && currentPage.value > 1) {
-            currentPage.value--;
-        }
+    } else {
+        actionError.value = responseMessage(data, 'Không thể xác nhận đơn');
+        await checkBookingStock(bookingId);
+        toast.error(actionError.value);
     }
   } catch (e) {
-    toast.error('Có lỗi xảy ra khi xác nhận');
+    actionError.value = 'Có lỗi xảy ra khi xác nhận';
+    toast.error(actionError.value);
+  } finally {
+    serving.value = false;
+  }
+}
+
+function requestCancelBooking(booking) {
+  if (!booking || serving.value || canceling.value) return;
+  actionError.value = '';
+  cancelConfirm.value = { show: true, booking };
+}
+
+async function executeCancelBooking() {
+  const booking = cancelConfirm.value.booking;
+  if (!booking) return;
+
+  canceling.value = true;
+  actionError.value = '';
+
+  try {
+    const res = await fetch('/api/booking/cancel', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeader()
+      },
+      body: JSON.stringify({
+        booking_id: booking.id,
+        note: 'Huỷ do không đủ nguyên vật liệu hoặc không thể phục vụ',
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok) {
+      toast.success('Đã huỷ đơn');
+      removeBookingFromList(booking.id);
+      cancelConfirm.value = { show: false, booking: null };
+      if (modalInstance) modalInstance.hide();
+    } else {
+      actionError.value = responseMessage(data, 'Không thể huỷ đơn');
+      toast.error(actionError.value);
+    }
+  } catch (error) {
+    actionError.value = 'Có lỗi xảy ra khi huỷ đơn';
+    toast.error(actionError.value);
+  } finally {
+    canceling.value = false;
   }
 }
 
@@ -231,6 +350,15 @@ onUnmounted(() => {
               <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body nb-modal-body">
+              <div v-if="stockChecking" class="nb-stock-status nb-stock-status--checking">
+                Đang kiểm tra nguyên vật liệu...
+              </div>
+              <div v-else-if="stockCheck?.ok" class="nb-stock-status nb-stock-status--ok">
+                {{ stockCheck.message }}
+              </div>
+              <div v-if="actionError" class="nb-action-error">
+                {{ actionError }}
+              </div>
               <div class="row g-4">
                 <div class="col-md-7">
                   <div class="nb-detail-box">
@@ -279,15 +407,30 @@ onUnmounted(() => {
             </div>
             <div class="modal-footer nb-modal-footer">
               <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">Đóng</button>
-              <button type="button" class="btn btn-success rounded-3 px-4 fw-bold d-flex align-items-center" @click="markAsServed(selectedBooking.id)">
+              <button type="button" class="btn btn-outline-danger rounded-3 px-4 fw-bold d-flex align-items-center" :disabled="serving || canceling" @click="requestCancelBooking(selectedBooking)">
+                <X :size="18" class="me-2" />
+                {{ canceling ? 'Đang huỷ...' : 'Huỷ đơn' }}
+              </button>
+              <button type="button" class="btn btn-success rounded-3 px-4 fw-bold d-flex align-items-center" :disabled="serving || canceling || !canServeSelectedBooking" @click="markAsServed(selectedBooking.id)">
                 <CheckCircle2 :size="18" class="me-2" />
-                Xác nhận đã phục vụ
+                {{ stockChecking ? 'Đang kiểm tra...' : (serving ? 'Đang xác nhận...' : 'Xác nhận đã phục vụ') }}
               </button>
             </div>
           </div>
         </div>
       </div>
     </Teleport>
+
+    <ConfirmDialog
+      :show="cancelConfirm.show"
+      title="Huỷ đơn"
+      :message="`Huỷ đơn #${cancelConfirm.booking?.id || ''}? Đơn sẽ rời khỏi danh sách chờ phục vụ và được lưu trạng thái đã huỷ.`"
+      confirm-text="Huỷ đơn"
+      cancel-text="Giữ lại"
+      type="danger"
+      @confirm="executeCancelBooking"
+      @cancel="cancelConfirm = { show: false, booking: null }"
+    />
   </AdminLayout>
 </template>
 
@@ -324,6 +467,36 @@ onUnmounted(() => {
 .nb-empty-icon { color: #2D4F1E; margin-bottom: 16px; opacity: 0.3; display: flex; justify-content: center; }
 .nb-empty h3 { color: #1a1a2e; font-weight: 700; margin-bottom: 8px; }
 .nb-empty p { color: #888; }
+
+.nb-action-error {
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    background: #fef2f2;
+    color: #b91c1c;
+    font-weight: 700;
+    white-space: pre-line;
+}
+
+.nb-stock-status {
+    margin-bottom: 12px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-weight: 700;
+}
+
+.nb-stock-status--checking {
+    border: 1px solid #bfdbfe;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.nb-stock-status--ok {
+    border: 1px solid #bbf7d0;
+    background: #f0fdf4;
+    color: #15803d;
+}
 
 .nb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
 

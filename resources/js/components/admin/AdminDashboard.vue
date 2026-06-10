@@ -13,7 +13,10 @@ import {
     CheckCircle2,
     FileClock,
     AlertTriangle,
-    PackageOpen
+    PackageOpen,
+    LogIn,
+    LogOut,
+    ClipboardPenLine
 } from 'lucide-vue-next';
 
 const { adminUser, authHeader, isAdmin, isShiftLeader } = useAdminAuth();
@@ -25,15 +28,32 @@ const stats = ref({
     worked_hours: 0
 });
 const stockAlerts = ref([]);
+const todaySchedules = ref([]);
+const todayAttendances = ref([]);
+const handovers = ref([]);
 
 onMounted(async () => {
     try {
-        const [statsRes, alertsRes] = await Promise.all([
+        const requests = [
             axios.get('/api/admin/stats', { headers: authHeader() }),
             axios.get('/api/stock/alerts', { headers: authHeader() }),
-        ]);
+        ];
+
+        if (showShiftFlow.value) {
+            const todayStr = toDateStr(new Date());
+            requests.push(
+                axios.get(`/api/staff/schedule?from=${todayStr}&to=${todayStr}`, { headers: authHeader() }),
+                axios.get(`/api/staff/attendance?month=${new Date().getMonth() + 1}&year=${new Date().getFullYear()}`, { headers: authHeader() }),
+                axios.get('/api/shift-handover', { headers: authHeader(), params: { per_page: 20, status: 'pending' } })
+            );
+        }
+
+        const [statsRes, alertsRes, scheduleRes, attendanceRes, handoverRes] = await Promise.all(requests);
         stats.value = statsRes.data;
         stockAlerts.value = alertsRes.data.alerts || [];
+        todaySchedules.value = scheduleRes?.data || [];
+        todayAttendances.value = (attendanceRes?.data || []).filter((item) => item.date === toDateStr(new Date()));
+        handovers.value = handoverRes?.data?.handovers?.data || [];
     } catch (e) {
         console.error('Failed to fetch dashboard data:', e);
     }
@@ -69,6 +89,64 @@ const greeting = computed(() => {
     if (h < 12) return 'Chào buổi sáng';
     if (h < 18) return 'Chào buổi chiều';
     return 'Chào buổi tối';
+});
+
+const showShiftFlow = computed(() => ['staff', 'shift_leader'].includes(adminUser.value?.role));
+
+function toDateStr(d) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+const hasTodaySchedule = computed(() => todaySchedules.value.length > 0);
+const hasCheckedIn = computed(() => todayAttendances.value.some((item) => item.check_in_at));
+const hasCheckedOut = computed(() => (
+    hasTodaySchedule.value
+        ? todaySchedules.value.every((schedule) => todayAttendances.value.some((item) => item.shift === schedule.shift && item.check_out_at))
+        : false
+));
+const pendingHandovers = computed(() => handovers.value.filter((item) => item.status === 'pending'));
+const shouldShowShiftFlow = computed(() => showShiftFlow.value && (hasTodaySchedule.value || pendingHandovers.value.length > 0));
+const ordersPath = computed(() => isAdmin() ? '/admin/orders' : '/staff/orders');
+
+function handleFlowStepClick(event, step) {
+    if (step.disabled) {
+        event.preventDefault();
+    }
+}
+
+const shiftFlowSteps = computed(() => {
+    const handoverPath = isAdmin() || isShiftLeader() ? '/admin/shift-handovers' : '/staff/shift-handover';
+    return [
+        {
+            title: 'Chấm công vào ca',
+            desc: hasCheckedIn.value ? 'Đã ghi nhận giờ vào ca.' : 'Check-in GPS khi bắt đầu ca.',
+            to: '/staff/attendance',
+            icon: LogIn,
+            done: hasCheckedIn.value,
+            disabled: !hasTodaySchedule.value,
+        },
+        {
+            title: pendingHandovers.value.length ? 'Nhận giao ca' : 'Tạo giao ca cuối ca',
+            desc: pendingHandovers.value.length
+                ? `${pendingHandovers.value.length} biên bản đang chờ xác nhận.`
+                : 'Đối soát tiền mặt, NVL và thiết bị trước khi kết ca.',
+            to: handoverPath,
+            icon: ClipboardPenLine,
+            done: false,
+            badge: pendingHandovers.value.length || '',
+        },
+        {
+            title: 'Chấm công cuối ca',
+            desc: hasCheckedIn.value ? 'Check-out khi kết thúc ca.' : 'Check-in trước khi chấm công cuối ca.',
+            to: '/staff/attendance',
+            icon: LogOut,
+            done: hasCheckedOut.value,
+            disabled: !hasCheckedIn.value,
+        },
+    ];
 });
 </script>
 
@@ -107,6 +185,47 @@ const greeting = computed(() => {
                     Xem NVL
                 </router-link>
             </div>
+
+            <section v-if="shouldShowShiftFlow" class="db-shift-flow">
+                <div class="db-flow-head">
+                    <div>
+                        <p class="db-flow-kicker">Việc cần làm</p>
+                        <h3>Thao tác trong ca</h3>
+                    </div>
+                    <router-link to="/staff/attendance" class="db-flow-status" :class="{ done: hasCheckedIn }">
+                        <CheckCircle2 :size="18" />
+                        {{ hasCheckedIn ? 'Đã vào ca' : 'Chưa vào ca' }}
+                    </router-link>
+                </div>
+                <div class="db-flow-steps">
+                    <router-link
+                        v-for="step in shiftFlowSteps"
+                        :key="step.title"
+                        :to="step.to"
+                        class="db-flow-step"
+                        :class="{ done: step.done, disabled: step.disabled }"
+                        @click="handleFlowStepClick($event, step)"
+                    >
+                        <div class="db-flow-index">
+                            <CheckCircle2 v-if="step.done" :size="16" />
+                            <span v-else></span>
+                        </div>
+                        <div class="db-flow-icon">
+                            <component :is="step.icon" :size="20" />
+                        </div>
+                        <div class="db-flow-copy">
+                            <div class="db-flow-title">
+                                {{ step.title }}
+                                <span v-if="step.badge" class="db-flow-badge">{{ step.badge }}</span>
+                            </div>
+                            <p>{{ step.desc }}</p>
+                        </div>
+                        <div class="db-flow-action">
+                            <ArrowRight :size="17" />
+                        </div>
+                    </router-link>
+                </div>
+            </section>
 
             <!-- Stats cards -->
             <div class="db-cards">
@@ -207,7 +326,7 @@ const greeting = computed(() => {
                  <div class="db-section-card full-width">
                     <div class="db-sc-header">
                         <h4 class="db-sc-title">Đơn hàng gần đây</h4>
-                        <router-link to="/admin/orders" class="db-sc-link">Xem tất cả</router-link>
+                        <router-link :to="ordersPath" class="db-sc-link">Xem tất cả</router-link>
                     </div>
                     <div class="db-table-wrap">
                         <table class="db-table">
@@ -282,7 +401,7 @@ const greeting = computed(() => {
                             <span>Lịch làm việc của tôi</span>
                             <ArrowRight :size="18" />
                         </router-link>
-                        <router-link to="/admin/orders" class="db-action-btn">
+                        <router-link to="/staff/orders" class="db-action-btn">
                             <div class="db-ab-icon"><ClipboardList :size="20"/></div>
                             <span>Xử lý đơn hàng</span>
                             <ArrowRight :size="18" />
@@ -374,6 +493,198 @@ const greeting = computed(() => {
     text-decoration: none;
     font-weight: 800;
     white-space: nowrap;
+}
+
+.db-shift-flow {
+    margin-bottom: 28px;
+    padding: 18px;
+    border: 1px solid #dfe7dc;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbf6 100%);
+    box-shadow: 0 12px 32px rgba(45, 79, 30, 0.06);
+}
+
+.db-flow-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.db-flow-kicker {
+    margin: 0 0 4px;
+    color: #58704f;
+    font-size: 0.72rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+}
+
+.db-flow-head h3 {
+    margin: 0;
+    color: #1f3518;
+    font-size: 1.15rem;
+    font-weight: 900;
+}
+
+.db-flow-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 0 14px;
+    border-radius: 8px;
+    border: 1px solid #fed7aa;
+    background: #fff7ed;
+    color: #9a3412;
+    text-decoration: none;
+    font-size: 0.86rem;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.db-flow-status.done {
+    border-color: #bbf7d0;
+    background: #ecfdf5;
+    color: #047857;
+}
+
+.db-flow-steps {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+
+.db-flow-step {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto auto 1fr auto;
+    align-items: center;
+    gap: 12px;
+    min-height: 76px;
+    padding: 12px 14px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+    color: #1e293b;
+    text-decoration: none;
+    transition: 0.2s ease;
+}
+
+.db-flow-step::before {
+    content: "";
+    position: absolute;
+    left: 26px;
+    top: -8px;
+    width: 2px;
+    height: 8px;
+    background: #d9e4d5;
+}
+
+.db-flow-step:first-child::before {
+    display: none;
+}
+
+.db-flow-step:hover {
+    border-color: #c8d8c0;
+    background: #ffffff;
+}
+
+.db-flow-step.done {
+    background: rgba(240, 253, 244, 0.8);
+}
+
+.db-flow-step.disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+
+.db-flow-index {
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #edf3ea;
+    color: #506347;
+    font-size: 0.78rem;
+    font-weight: 900;
+}
+
+.db-flow-index span {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: currentColor;
+}
+
+.db-flow-step.done .db-flow-index {
+    background: #16a34a;
+    color: white;
+}
+
+.db-flow-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #f7faf5;
+    color: #2D4F1E;
+    box-shadow: inset 0 0 0 1px #e2e8f0;
+}
+
+.db-flow-copy {
+    min-width: 0;
+}
+
+.db-flow-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #0f172a;
+    font-size: 0.94rem;
+    font-weight: 900;
+}
+
+.db-flow-copy p {
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 0.79rem;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.db-flow-badge {
+    min-width: 22px;
+    height: 22px;
+    padding: 0 7px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #dc2626;
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 900;
+}
+
+.db-flow-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 34px;
+    height: 34px;
+    padding: 0 9px;
+    border-radius: 8px;
+    color: #64748b;
+    font-size: 0.78rem;
+    font-weight: 900;
 }
 
 .db-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 24px; margin-bottom: 32px; }
@@ -486,6 +797,35 @@ const greeting = computed(() => {
 
     .db-stock-alert-link {
         width: 100%;
+    }
+
+    .db-shift-flow {
+        padding: 16px;
+        border-radius: 8px;
+    }
+
+    .db-flow-head {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .db-flow-status {
+        width: 100%;
+    }
+
+    .db-flow-steps {
+        grid-template-columns: 1fr;
+    }
+
+    .db-flow-step {
+        min-height: 82px;
+        grid-template-columns: auto auto 1fr auto;
+        padding: 12px;
+    }
+
+    .db-flow-action span {
+        display: none;
     }
     
     .db-cards { 

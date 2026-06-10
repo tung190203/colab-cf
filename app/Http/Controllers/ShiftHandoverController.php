@@ -3,12 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\Booking;
+use App\Models\Extra;
 use App\Models\Material;
 use App\Models\PosOrder;
+use App\Models\Recipe;
 use App\Models\Shift;
 use App\Models\ShiftHandover;
 use App\Models\StaffSchedule;
-use App\Models\StockLog;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -17,7 +18,6 @@ use Illuminate\Support\Facades\DB;
 class ShiftHandoverController extends Controller
 {
     private const CASH_DIFF_THRESHOLD = 50000;
-    private const MATERIAL_DIFF_PERCENT_THRESHOLD = 10;
 
     public function prepare()
     {
@@ -49,6 +49,7 @@ class ShiftHandoverController extends Controller
             'revenue_cash' => (int) $revenueCash,
             'revenue_transfer' => (int) $revenueTransfer,
             'materials' => Material::where('active', true)->orderBy('name')->get(),
+            'products' => $this->handoverProducts(),
             'staff' => User::whereIn('role', ['staff', 'shift_leader'])->orderBy('name')->get(['id', 'name', 'role']),
         ]);
     }
@@ -64,10 +65,9 @@ class ShiftHandoverController extends Controller
             'total_orders' => 'required|integer|min:0',
             'revenue_cash' => 'required|integer|min:0',
             'revenue_transfer' => 'required|integer|min:0',
-            'materials' => 'required|array|min:1',
-            'materials.*.material_id' => 'required|exists:materials,id',
-            'materials.*.actual' => 'required|numeric|min:0',
-            'materials.*.reason' => 'nullable|string|max:1000',
+            'sold_products' => 'nullable|array',
+            'sold_products.*.product_id' => 'required|exists:extras,id',
+            'sold_products.*.quantity' => 'required|integer|min:1',
             'equipment_checklist' => 'nullable|array',
             'handover_note' => 'nullable|string|max:3000',
         ]);
@@ -79,46 +79,10 @@ class ShiftHandoverController extends Controller
         }
 
         $handover = DB::transaction(function () use ($request, $validated) {
-            $materials = Material::whereIn('id', collect($validated['materials'])->pluck('material_id'))
-                ->lockForUpdate()
-                ->get()
-                ->keyBy('id');
-
-            $hasAlert = false;
-            $snapshot = collect($validated['materials'])->map(function ($item) use ($materials, &$hasAlert, $request) {
-                $material = $materials[(int) $item['material_id']];
-                $theoretical = round((float) $material->current_stock, 3);
-                $actual = round((float) $item['actual'], 3);
-                $diff = round($theoretical - $actual, 3);
-                $percent = $theoretical > 0 ? round(abs($diff) / $theoretical * 100, 2) : ($diff == 0 ? 0 : 100);
-                $isAlert = $percent > self::MATERIAL_DIFF_PERCENT_THRESHOLD;
-                $hasAlert = $hasAlert || $isAlert;
-
-                if ($actual !== $theoretical) {
-                    StockLog::create([
-                        'material_id' => $material->id,
-                        'type' => 'adjustment',
-                        'quantity' => round($actual - $theoretical, 3),
-                        'stock_before' => $theoretical,
-                        'stock_after' => $actual,
-                        'note' => $item['reason'] ?? 'Điều chỉnh sau giao ca',
-                        'created_by' => $request->user()?->id,
-                    ]);
-                    $material->update(['current_stock' => $actual]);
-                }
-
-                return [
-                    'material_id' => $material->id,
-                    'material_name' => $material->name,
-                    'unit' => $material->unit,
-                    'theoretical' => $theoretical,
-                    'actual' => $actual,
-                    'diff' => $diff,
-                    'diff_percent' => $percent,
-                    'reason' => $item['reason'] ?? null,
-                    'has_alert' => $isAlert,
-                ];
-            })->values()->all();
+            $soldProducts = $this->normalizeSoldProducts($validated['sold_products'] ?? []);
+            $snapshotData = $this->buildNvlSnapshotFromSoldProducts($soldProducts);
+            $snapshot = $snapshotData['snapshot'];
+            $hasAlert = $snapshotData['has_alert'];
 
             $cashDiff = (int) $validated['cash_actual'] - (int) $validated['cash_theoretical'];
             $hasAlert = $hasAlert || abs($cashDiff) > self::CASH_DIFF_THRESHOLD;
@@ -136,6 +100,7 @@ class ShiftHandoverController extends Controller
                 'revenue_cash' => $validated['revenue_cash'],
                 'revenue_transfer' => $validated['revenue_transfer'],
                 'total_revenue' => $validated['revenue_cash'] + $validated['revenue_transfer'],
+                'sold_products' => $snapshotData['sold_products'],
                 'nvl_snapshot' => $snapshot,
                 'equipment_checklist' => $validated['equipment_checklist'] ?? [],
                 'handover_note' => $validated['handover_note'] ?? null,
@@ -298,6 +263,145 @@ class ShiftHandoverController extends Controller
         $handover->setAttribute('receive_date', $receiveSchedule['date']);
 
         return $handover;
+    }
+
+    private function handoverProducts()
+    {
+        $recipeProductIds = Recipe::where('active', true)->pluck('product_id')->all();
+
+        return Extra::query()
+            ->where('status', true)
+            ->whereNotIn(DB::raw('LOWER(category)'), $this->excludedProductCategories())
+            ->orderBy('category')
+            ->orderBy('name')
+            ->get(['id', 'name', 'category', 'sku'])
+            ->map(fn (Extra $product) => [
+                'id' => $product->id,
+                'name' => $product->name,
+                'category' => $product->category,
+                'sku' => $product->sku,
+                'has_recipe' => in_array($product->id, $recipeProductIds, true),
+            ])
+            ->values();
+    }
+
+    private function normalizeSoldProducts(array $soldProducts): array
+    {
+        return collect($soldProducts)
+            ->filter(fn ($item) => !empty($item['product_id']) && (int) ($item['quantity'] ?? 0) > 0)
+            ->groupBy(fn ($item) => (int) $item['product_id'])
+            ->map(fn ($items, $productId) => [
+                'product_id' => (int) $productId,
+                'quantity' => (int) $items->sum(fn ($item) => (int) ($item['quantity'] ?? 0)),
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function buildNvlSnapshotFromSoldProducts(array $soldProducts): array
+    {
+        if (empty($soldProducts)) {
+            return [
+                'snapshot' => [],
+                'sold_products' => [],
+                'has_alert' => false,
+            ];
+        }
+
+        $items = collect($soldProducts);
+        $products = Extra::whereIn('id', $items->pluck('product_id'))->get(['id', 'name', 'category', 'sku'])->keyBy('id');
+        $recipes = Recipe::whereIn('product_id', $items->pluck('product_id'))
+            ->where('active', true)
+            ->get()
+            ->keyBy('product_id');
+
+        $requirements = [];
+        $hasAlert = false;
+        $missingRecipeRows = [];
+
+        $normalizedProducts = $items->map(function ($item) use ($products, $recipes, &$requirements, &$hasAlert, &$missingRecipeRows) {
+            $product = $products[(int) $item['product_id']];
+            $quantity = (int) $item['quantity'];
+            $recipe = $recipes->get($product->id);
+
+            if (!$recipe) {
+                $hasAlert = true;
+                $missingRecipeRows[] = [
+                    'material_id' => 'missing-product-' . $product->id,
+                    'material_name' => 'Chưa có công thức: ' . $product->name,
+                    'unit' => '',
+                    'theoretical' => 0,
+                    'actual' => 0,
+                    'diff' => 0,
+                    'diff_percent' => 0,
+                    'required' => 0,
+                    'reason' => 'Món này chưa có công thức NVL',
+                    'has_alert' => true,
+                ];
+            } else {
+                foreach ($recipe->ingredients as $ingredient) {
+                    $materialId = (int) $ingredient['material_id'];
+                    $requirements[$materialId] = ($requirements[$materialId] ?? 0)
+                        + round((float) $ingredient['quantity'] * $quantity, 3);
+                }
+            }
+
+            return [
+                'product_id' => $product->id,
+                'product_name' => $product->name,
+                'category' => $product->category,
+                'sku' => $product->sku,
+                'quantity' => $quantity,
+                'has_recipe' => (bool) $recipe,
+            ];
+        })->values()->all();
+
+        $materials = Material::whereIn('id', array_keys($requirements))->get()->keyBy('id');
+        $snapshot = collect($requirements)
+            ->map(function ($requiredQuantity, $materialId) use ($materials, &$hasAlert) {
+                $material = $materials[(int) $materialId];
+                $currentStock = round((float) $material->current_stock, 3);
+                $requiredQuantity = round((float) $requiredQuantity, 3);
+                $afterExpected = round($currentStock - $requiredQuantity, 3);
+                $isAlert = $afterExpected < 0;
+                $hasAlert = $hasAlert || $isAlert;
+
+                return [
+                    'material_id' => $material->id,
+                    'material_name' => $material->name,
+                    'unit' => $material->unit,
+                    'theoretical' => $currentStock,
+                    'actual' => max($afterExpected, 0),
+                    'diff' => $requiredQuantity,
+                    'diff_percent' => $currentStock > 0 ? round($requiredQuantity / $currentStock * 100, 2) : ($requiredQuantity > 0 ? 100 : 0),
+                    'required' => $requiredQuantity,
+                    'reason' => $isAlert ? 'Không đủ tồn theo món đã bán' : null,
+                    'has_alert' => $isAlert,
+                ];
+            })
+            ->sortBy('material_name')
+            ->values()
+            ->merge($missingRecipeRows)
+            ->all();
+
+        return [
+            'snapshot' => $snapshot,
+            'sold_products' => $normalizedProducts,
+            'has_alert' => $hasAlert,
+        ];
+    }
+
+    private function excludedProductCategories(): array
+    {
+        return [
+            'services',
+            'office_services',
+            'other_services',
+            'others_services',
+            'office services',
+            'other services',
+            'others services',
+        ];
     }
 
     private function shiftKeysForHandoverType(string $shiftType): array

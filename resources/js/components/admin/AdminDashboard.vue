@@ -11,7 +11,9 @@ import {
     ArrowRight,
     Coffee,
     CheckCircle2,
-    FileClock
+    FileClock,
+    AlertTriangle,
+    PackageOpen
 } from 'lucide-vue-next';
 
 const { adminUser, authHeader, isAdmin, isShiftLeader } = useAdminAuth();
@@ -22,14 +24,18 @@ const stats = ref({
     today_revenue: 0,
     worked_hours: 0
 });
+const stockAlerts = ref([]);
 
 onMounted(async () => {
     try {
-        const res = await axios.get('/api/admin/stats', { headers: authHeader() });
-        console.log('Dashboard Stats:', res.data);
-        stats.value = res.data;
+        const [statsRes, alertsRes] = await Promise.all([
+            axios.get('/api/admin/stats', { headers: authHeader() }),
+            axios.get('/api/stock/alerts', { headers: authHeader() }),
+        ]);
+        stats.value = statsRes.data;
+        stockAlerts.value = alertsRes.data.alerts || [];
     } catch (e) {
-        console.error('Failed to fetch stats:', e);
+        console.error('Failed to fetch dashboard data:', e);
     }
 });
 
@@ -46,6 +52,10 @@ const formatCompact = (val) => {
 const formatTime = (dt) => {
     if (!dt) return '--:--';
     return new Date(dt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+};
+
+const formatStock = (material) => {
+    return `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(material.current_stock)} ${material.unit}`;
 };
 
 const getBarHeight = (val) => {
@@ -76,6 +86,26 @@ const greeting = computed(() => {
                 <div class="db-date">
                     {{ new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }) }}
                 </div>
+            </div>
+
+            <div v-if="stockAlerts.length" class="db-stock-alert">
+                <div class="db-stock-alert-main">
+                    <div class="db-stock-alert-icon">
+                        <AlertTriangle :size="22" />
+                    </div>
+                    <div>
+                        <h3>{{ stockAlerts.length }} NVL dưới ngưỡng cảnh báo</h3>
+                        <p>
+                            <span v-for="item in stockAlerts.slice(0, 3)" :key="item.id">
+                                {{ item.name }} còn {{ formatStock(item) }}
+                            </span>
+                        </p>
+                    </div>
+                </div>
+                <router-link v-if="isAdmin() || isShiftLeader()" to="/admin/materials" class="db-stock-alert-link">
+                    <PackageOpen :size="18" />
+                    Xem NVL
+                </router-link>
             </div>
 
             <!-- Stats cards -->
@@ -224,6 +254,12 @@ const greeting = computed(() => {
                             <span>Cập nhật Menu</span>
                             <ArrowRight :size="18" />
                         </router-link>
+                        <router-link to="/admin/materials" class="db-action-btn">
+                            <div class="db-ab-icon"><PackageOpen :size="20"/></div>
+                            <span>Kiểm tra NVL</span>
+                            <span v-if="stockAlerts.length" class="db-action-badge">{{ stockAlerts.length }}</span>
+                            <ArrowRight :size="18" />
+                        </router-link>
                         <router-link to="/admin/schedule" class="db-action-btn">
                             <div class="db-ab-icon"><Clock :size="20"/></div>
                             <span>Phân lịch làm việc</span>
@@ -270,6 +306,75 @@ const greeting = computed(() => {
 .db-greeting-sub { margin: 0; color: #64748b; font-weight: 600; font-size: 1.1rem; }
 .db-greeting-name { margin: 0; font-size: 2.2rem; font-weight: 800; color: #1a1a2e; letter-spacing: -0.5px; }
 .db-date { color: #64748b; font-weight: 600; background: white; padding: 10px 24px; border-radius: 100px; border: 1px solid #f1f5f9; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+
+.db-stock-alert {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 24px;
+    padding: 16px;
+    border: 1px solid #fed7aa;
+    border-radius: 8px;
+    background: #fff7ed;
+}
+
+.db-stock-alert-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.db-stock-alert-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    background: #ffedd5;
+    color: #c2410c;
+    flex-shrink: 0;
+}
+
+.db-stock-alert h3 {
+    margin: 0;
+    color: #9a3412;
+    font-size: 1rem;
+    font-weight: 900;
+}
+
+.db-stock-alert p {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 5px 0 0;
+    color: #7c2d12;
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.db-stock-alert p span:not(:last-child)::after {
+    content: "•";
+    margin-left: 8px;
+    color: #fb923c;
+}
+
+.db-stock-alert-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 0 14px;
+    border-radius: 8px;
+    background: #20451f;
+    color: #fff;
+    text-decoration: none;
+    font-weight: 800;
+    white-space: nowrap;
+}
 
 .db-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 24px; margin-bottom: 32px; }
 
@@ -348,6 +453,20 @@ const greeting = computed(() => {
 .db-action-btn span { flex: 1; font-size: 0.95rem; }
 .db-action-btn:hover { background: #2D4F1E; color: white; border-color: #2D4F1E; transform: translateY(-3px); box-shadow: 0 8px 20px rgba(45, 79, 30, 0.15); }
 .db-action-btn:hover .db-ab-icon { background: rgba(255,255,255,0.1); color: white; }
+.db-action-badge {
+    flex: 0 0 auto !important;
+    min-width: 26px;
+    height: 26px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: #dc2626;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.78rem !important;
+    font-weight: 900;
+}
 
 .db-empty { padding: 40px; text-align: center; color: #94a3b8; font-style: italic; font-size: 0.9rem; }
 
@@ -360,6 +479,14 @@ const greeting = computed(() => {
     .db-greeting-name { font-size: 1.5rem; }
     .db-greeting-sub { font-size: 0.9rem; }
     .db-date { display: none; }
+    .db-stock-alert {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .db-stock-alert-link {
+        width: 100%;
+    }
     
     .db-cards { 
         grid-template-columns: repeat(2, 1fr); 

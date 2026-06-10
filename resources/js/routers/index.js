@@ -6,6 +6,7 @@ import StatusPage from '../components/StatusPage.vue';
 import VietQRPage from '../components/VietQRPage.vue';
 import Auth from '../components/Auth.vue';
 import NewBookings from '../components/NewBookings.vue';
+import ManualPosOrders from '../components/ManualPosOrders.vue';
 import AddMember from '../components/AddMember.vue';
 import ListMember from '../components/ListMember.vue';
 
@@ -22,6 +23,9 @@ import AdminAttendance from '../components/admin/AdminAttendance.vue';
 import AdminCustomerStats from '../components/admin/AdminCustomerStats.vue';
 import AdminAuditLogs from '../components/admin/AdminAuditLogs.vue';
 import AdminPenaltyRules from '../components/admin/AdminPenaltyRules.vue';
+import AdminMaterials from '../components/admin/AdminMaterials.vue';
+import AdminRecipes from '../components/admin/AdminRecipes.vue';
+import ShiftHandover from '../components/ShiftHandover.vue';
 
 // Staff components
 import StaffAttendance from '../components/staff/StaffAttendance.vue';
@@ -54,6 +58,9 @@ const routes = [
   { path: '/admin/penalty-rules', component: AdminPenaltyRules, name: 'AdminPenaltyRules', meta: { requiresAuth: true, roles: ['admin'] } },
   { path: '/admin/payroll', component: AdminPayroll, name: 'AdminPayroll', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
   { path: '/admin/menu', component: AdminMenu, name: 'AdminMenu', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
+  { path: '/admin/materials', component: AdminMaterials, name: 'AdminMaterials', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
+  { path: '/admin/recipes', component: AdminRecipes, name: 'AdminRecipes', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
+  { path: '/admin/shift-handovers', component: ShiftHandover, name: 'AdminShiftHandovers', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
   { path: '/admin/booking-setup', component: AdminBookingSetup, name: 'AdminBookingSetup', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
 
   // ─── Shared admin+staff routes ───────────────────────────────────────────────
@@ -62,6 +69,8 @@ const routes = [
   { path: '/staff/attendance', component: StaffAttendance, name: 'StaffAttendance', meta: { requiresAuth: true, roles: ['staff', 'shift_leader'] } },
   { path: '/staff/schedule', component: StaffSchedule, name: 'StaffSchedule', meta: { requiresAuth: true, roles: ['admin', 'staff', 'shift_leader'] } },
   { path: '/staff/payroll', component: StaffPayroll, name: 'StaffPayroll', meta: { requiresAuth: true, roles: ['admin', 'staff', 'shift_leader'] } },
+  { path: '/staff/shift-handover', component: ShiftHandover, name: 'StaffShiftHandover', meta: { requiresAuth: true, roles: ['admin', 'staff', 'shift_leader'] } },
+  { path: '/staff/manual-orders', component: ManualPosOrders, name: 'ManualPosOrders', meta: { requiresAuth: true, roles: ['admin', 'staff', 'shift_leader'] } },
   { path: '/checkin', component: QRCheckIn, name: 'QRCheckIn', meta: { requiresAuth: true, roles: ['staff', 'shift_leader'] } },
 
   // ─── Orders (Admin/Staff) ──────────────────────────────────────────────────

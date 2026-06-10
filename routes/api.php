@@ -3,7 +3,12 @@
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\HR\AdminController;
 use App\Http\Controllers\HR\StaffController;
+use App\Http\Controllers\MaterialController;
 use App\Http\Controllers\MenuController;
+use App\Http\Controllers\PosOrderController;
+use App\Http\Controllers\RecipeController;
+use App\Http\Controllers\ShiftHandoverController;
+use App\Http\Controllers\StockController;
 use Illuminate\Support\Facades\Route;
 
 // ─── Public Booking Routes ─────────────────────────────────────────────────────
@@ -20,7 +25,9 @@ Route::get('/list-booking', [BookingController::class, 'getListBookings']);
 Route::get('/all-bookings', [BookingController::class, 'getAllBookings']);
 Route::post('/add-member', [BookingController::class, 'addMember']);
 Route::post('/check-table', [BookingController::class, 'checkTableAvailability']);
+Route::get('/booking/{booking}/stock-check', [BookingController::class, 'checkBookingStock']);
 Route::post('/booking/mark-as-served', [BookingController::class, 'markAsServed']);
+Route::post('/booking/cancel', [BookingController::class, 'cancelBooking']);
 Route::get('/list-members', [BookingController::class, 'getListMembers']);
 Route::delete('/member/{member}', [BookingController::class, 'deleteMember']);
 Route::put('/member/{member}', [BookingController::class, 'editMember']);
@@ -72,10 +79,37 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/admin/schedule/{id}', [AdminController::class, 'deleteSchedule']);
 
         Route::get('/admin/customer-stats', [AdminController::class, 'getCustomerStats']);
+
+        // Material Management
+        Route::get('/materials', [MaterialController::class, 'index']);
+        Route::post('/materials', [MaterialController::class, 'store']);
+        Route::patch('/materials/{material}', [MaterialController::class, 'update']);
+        Route::delete('/materials/{material}', [MaterialController::class, 'destroy']);
+
+        Route::post('/stock/import', [StockController::class, 'import']);
+        Route::post('/stock/manual-deduct', [StockController::class, 'manualDeduct']);
+        Route::post('/stock/deduct-by-order', [StockController::class, 'deductByOrder']);
+        Route::get('/stock/logs', [StockController::class, 'logs']);
+
+        Route::get('/recipes', [RecipeController::class, 'index']);
+        Route::get('/recipes/options', [RecipeController::class, 'options']);
+        Route::post('/recipes', [RecipeController::class, 'store']);
+        Route::get('/recipes/{recipe}/logs', [RecipeController::class, 'logs']);
     });
 
     // Staff & Admin
+    Route::get('/shift-handover/prepare', [ShiftHandoverController::class, 'prepare']);
+    Route::post('/shift-handover', [ShiftHandoverController::class, 'store']);
+    Route::get('/shift-handover', [ShiftHandoverController::class, 'index']);
+    Route::get('/shift-handover/export/{month}', [ShiftHandoverController::class, 'export']);
+    Route::get('/shift-handover/{shiftHandover}', [ShiftHandoverController::class, 'show']);
+    Route::post('/shift-handover/{shiftHandover}/confirm', [ShiftHandoverController::class, 'confirm']);
+    Route::post('/shift-handover/{shiftHandover}/dispute', [ShiftHandoverController::class, 'dispute']);
+    Route::get('/pos-orders/options', [PosOrderController::class, 'options']);
+    Route::get('/pos-orders', [PosOrderController::class, 'index']);
+    Route::post('/pos-orders', [PosOrderController::class, 'store']);
     Route::get('/admin/staff', [AdminController::class, 'getStaffList']);
+    Route::get('/stock/alerts', [StockController::class, 'alerts']);
     Route::get('/admin/schedule', [AdminController::class, 'getSchedule']);
     Route::get('/shifts', [AdminController::class, 'getShifts']);
     Route::post('/staff/check-in', [StaffController::class, 'checkIn']);

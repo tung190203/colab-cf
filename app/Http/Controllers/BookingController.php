@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\VipCard;
 use App\Notifications\BookingCreated;
 use App\Services\MomoService;
+use App\Services\StockDeductionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -326,7 +327,8 @@ class BookingController extends Controller
         ->groupBy('category')
         ->map(function ($items) {
             return $items->map(function ($item) {
-                $bookedSeats = Booking::where('table_id', $item->id)
+                $bookedSeats = $this->activeBookingQuery()
+                    ->where('table_id', $item->id)
                     ->whereDate('start_time', today())
                     ->where('mode_booking', 'seat')
                     ->count();
@@ -431,7 +433,8 @@ class BookingController extends Controller
 
             if (in_array($table->code, ['C1', 'C2', 'C3'])) {
                 $idC1 = Table::where('code', 'C1')->value('id');
-                $hasRoomBooking = Booking::where('table_id', $idC1)
+                $hasRoomBooking = $this->activeBookingQuery()
+                    ->where('table_id', $idC1)
                     ->where('mode_booking', 'room')
                     ->where(function ($query) use ($startTime, $endTime) {
                         $query->whereBetween('start_time', [$startTime, $endTime])
@@ -452,7 +455,8 @@ class BookingController extends Controller
             }
 
             // Kiểm tra số ghế đã được đặt
-            $bookedSeats = Booking::where('table_id', $tableId)
+            $bookedSeats = $this->activeBookingQuery()
+                ->where('table_id', $tableId)
                 ->where('mode_booking', 'seat')
                 ->where(function ($query) use ($startTime, $endTime) {
                     $query->whereBetween('start_time', [$startTime, $endTime])
@@ -474,7 +478,8 @@ class BookingController extends Controller
 
         // Kiểm tra chế độ "room"
         if ($modeBooking == 'room') {
-            $hasConflict = Booking::where('table_id', $tableId)
+            $hasConflict = $this->activeBookingQuery()
+                ->where('table_id', $tableId)
                 ->where(function ($query) use ($startTime, $endTime) {
                     $query->whereBetween('start_time', [$startTime, $endTime])
                         ->orWhereBetween('end_time', [$startTime, $endTime])
@@ -493,7 +498,8 @@ class BookingController extends Controller
             }
             if ($table->code == 'C1') {
                 $tableIds = Table::whereIn('code', ['C1', 'C2', 'C3'])->pluck('id')->toArray();
-                $hasSeatBooking = Booking::whereIn('table_id', $tableIds)
+                $hasSeatBooking = $this->activeBookingQuery()
+                    ->whereIn('table_id', $tableIds)
                     ->where('mode_booking', 'seat')
                     ->where(function ($query) use ($startTime, $endTime) {
                         $query->whereBetween('start_time', [$startTime, $endTime])
@@ -682,25 +688,105 @@ class BookingController extends Controller
         ]);
     }
 
-    public function markAsServed(Request $request)
+    public function markAsServed(Request $request, StockDeductionService $stockDeductionService)
     {
         $request->validate([
             'booking_id' => 'required|exists:bookings,id',
         ]);
 
-        $booking = Booking::find($request->booking_id);
+        $booking = Booking::with('extras')->find($request->booking_id);
         if (!$booking) {
             return response()->json(['message' => 'Không tìm thấy đặt bàn'], 404);
         }
 
-        $booking->is_served = true;
-        // Nếu là đơn tiền mặt đang chờ thanh toán, chuyển thành confirmed (Hoàn thành)
-        if ($booking->payment_method === 'cash' && $booking->status === 'pending') {
-            $booking->status = 'confirmed';
+        if ($booking->is_served) {
+            return response()->json(['message' => 'Đơn này đã được xác nhận phục vụ', 'booking' => $booking]);
         }
-        $booking->save();
+
+        $deductItems = $this->bookingDeductItems($booking);
+
+        DB::transaction(function () use ($booking, $deductItems, $request, $stockDeductionService) {
+            if (!empty($deductItems)) {
+                $stockDeductionService->deductByOrder(
+                    'booking_' . $booking->id,
+                    $deductItems,
+                    $request->user()?->id,
+                    'Trừ NVL khi nhân viên xác nhận đơn #' . $booking->id
+                );
+            }
+
+            $booking->is_served = true;
+            // Nếu là đơn tiền mặt đang chờ thanh toán, chuyển thành confirmed (Hoàn thành)
+            if ($booking->payment_method === 'cash' && $booking->status === 'pending') {
+                $booking->status = 'confirmed';
+            }
+            $booking->save();
+        });
 
         return response()->json(['message' => 'Đánh dấu là đã phục vụ', 'booking' => $booking]);
+    }
+
+    public function checkBookingStock(Booking $booking, StockDeductionService $stockDeductionService)
+    {
+        $booking->load('extras');
+
+        return response()->json([
+            'stock_check' => $stockDeductionService->checkAvailability($this->bookingDeductItems($booking)),
+        ]);
+    }
+
+    public function cancelBooking(Request $request)
+    {
+        $validated = $request->validate([
+            'booking_id' => 'required|exists:bookings,id',
+            'note' => 'nullable|string|max:500',
+        ]);
+
+        $booking = Booking::with('table')->find($validated['booking_id']);
+        if (!$booking) {
+            return response()->json(['message' => 'Không tìm thấy đặt bàn'], 404);
+        }
+
+        if ($booking->is_served) {
+            return response()->json(['message' => 'Không thể huỷ đơn đã phục vụ'], 422);
+        }
+
+        if ($booking->status === 'cancelled') {
+            return response()->json(['message' => 'Đơn này đã được huỷ', 'booking' => $booking]);
+        }
+
+        DB::transaction(function () use ($booking, $validated) {
+            $booking->status = 'cancelled';
+            if (!empty($validated['note'])) {
+                $booking->note = trim(($booking->note ? $booking->note . "\n" : '') . '[Huỷ đơn] ' . $validated['note']);
+            }
+            $booking->save();
+
+            if ($booking->table) {
+                $hasActiveBookings = $this->activeBookingQuery()
+                    ->where('table_id', $booking->table_id)
+                    ->where('id', '!=', $booking->id)
+                    ->exists();
+
+                if (!$hasActiveBookings) {
+                    $booking->table->update(['status' => 'free']);
+                }
+
+                if ($booking->table->code === 'C1' && $booking->mode_booking === 'room') {
+                    $tableIds = Table::whereIn('code', ['C1', 'C2', 'C3'])->pluck('id');
+                    $hasClusterActiveBookings = $this->activeBookingQuery()
+                        ->whereIn('table_id', $tableIds)
+                        ->where('id', '!=', $booking->id)
+                        ->exists();
+
+                    if (!$hasClusterActiveBookings) {
+                        Table::whereIn('id', $tableIds)->update(['status' => 'free']);
+                    }
+                }
+            }
+        });
+
+        return response()->json(['message' => 'Đã huỷ đơn', 'booking' => $booking->fresh('table')]);
     }
 
     public function getListMembers()
@@ -752,5 +838,37 @@ class BookingController extends Controller
             'message' => 'Cập nhật thành viên thành công',
             'user' => $user->append('image_url'),
         ]);
+    }
+
+    private function bookingDeductItems(Booking $booking): array
+    {
+        return $booking->extras
+            ->reject(fn ($extra) => in_array(strtolower((string) $extra->category), $this->excludedStockCategories(), true))
+            ->map(fn ($extra) => [
+                'product_id' => $extra->id,
+                'quantity' => (int) $extra->pivot->quantity,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function excludedStockCategories(): array
+    {
+        return [
+            'services',
+            'office_services',
+            'other_services',
+            'others_services',
+            'office services',
+            'other services',
+            'others services',
+        ];
+    }
+
+    private function activeBookingQuery()
+    {
+        return Booking::query()
+            ->where('is_served', false)
+            ->whereIn('status', ['pending', 'confirmed']);
     }
 }

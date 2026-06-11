@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAdminAuth } from '../../composables/useAdminAuth';
 import axios from 'axios';
-import { CheckCircle2, XCircle, Loader2, Clock, LogOut, LogIn, ArrowLeft } from 'lucide-vue-next';
+import { CheckCircle2, XCircle, Loader2, Clock, ClipboardCheck, ArrowLeft } from 'lucide-vue-next';
 
 const router = useRouter();
 const { authHeader, isLoggedIn } = useAdminAuth();
@@ -11,6 +11,7 @@ const { authHeader, isLoggedIn } = useAdminAuth();
 const status = ref('waiting'); // waiting, processing, success, error
 const message = ref('Nhấn nút bên dưới để bắt đầu xác thực vị trí và chấm công.');
 const resultData = ref(null);
+const handoverReminder = ref(false);
 
 onMounted(() => {
     if (!isLoggedIn()) {
@@ -39,10 +40,7 @@ async function startCheckIn() {
                 status.value = 'success';
                 message.value = res.data.message;
                 resultData.value = res.data;
-                
-                setTimeout(() => {
-                    router.push('/staff/attendance');
-                }, 5000);
+                handoverReminder.value = true;
             } catch (err) {
                 status.value = 'error';
                 message.value = err.response?.data?.message || 'Có lỗi xảy ra khi xử lý check-in.';
@@ -62,6 +60,16 @@ async function startCheckIn() {
 
 function goBack() {
     router.push('/staff/attendance');
+}
+
+function closeReminder() {
+    handoverReminder.value = false;
+}
+
+function goToShiftHandover() {
+    const tab = resultData.value?.type === 'check-in' ? 'pending' : 'create';
+    handoverReminder.value = false;
+    router.push(`/staff/shift-handover?tab=${tab}`);
 }
 </script>
 
@@ -121,7 +129,6 @@ function goBack() {
                     <ArrowLeft :size="18" />
                     Về trang điểm danh
                 </button>
-                <p class="qrc-auto-back">Tự động quay lại sau 5 giây...</p>
             </div>
 
             <!-- Error State -->
@@ -136,6 +143,27 @@ function goBack() {
                     <ArrowLeft :size="18" />
                     Quay lại
                 </button>
+            </div>
+        </div>
+
+        <div v-if="handoverReminder" class="qrc-reminder-backdrop" @click.self="closeReminder">
+            <div class="qrc-reminder">
+                <div class="qrc-reminder-icon" :class="{ out: resultData?.type === 'check-out' }">
+                    <ClipboardCheck :size="30" />
+                </div>
+                <h3>{{ resultData?.type === 'check-in' ? 'Nhắc nhận ca' : 'Nhắc giao ca' }}</h3>
+                <p>
+                    {{ resultData?.type === 'check-in'
+                        ? 'Bạn vừa check-in. Vào màn nhận ca để kiểm tra bàn giao từ ca trước.'
+                        : 'Bạn vừa check-out. Vào màn giao ca để bàn giao tiền, món bán và ghi chú cho ca sau.'
+                    }}
+                </p>
+                <div class="qrc-reminder-actions">
+                    <button type="button" class="qrc-reminder-secondary" @click="closeReminder">Để sau</button>
+                    <button type="button" class="qrc-reminder-primary" @click="goToShiftHandover">
+                        {{ resultData?.type === 'check-in' ? 'Đi nhận ca' : 'Đi giao ca' }}
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -302,9 +330,80 @@ function goBack() {
     background: rgba(255, 255, 255, 0.1);
 }
 
-.qrc-auto-back {
-    color: rgba(255, 255, 255, 0.3);
-    font-size: 0.85rem;
+.qrc-reminder-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1400;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.58);
+}
+
+.qrc-reminder {
+    width: min(420px, 100%);
+    padding: 26px;
+    border-radius: 22px;
+    background: #fff;
+    box-shadow: 0 28px 90px rgba(0, 0, 0, 0.35);
+    text-align: center;
+}
+
+.qrc-reminder-icon {
+    width: 58px;
+    height: 58px;
+    margin: 0 auto 14px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #ecfdf3;
+    color: #15803d;
+}
+
+.qrc-reminder-icon.out {
+    background: #fff7ed;
+    color: #c2410c;
+}
+
+.qrc-reminder h3 {
+    margin: 0 0 8px;
+    color: #101828;
+    font-size: 1.35rem;
+    font-weight: 800;
+}
+
+.qrc-reminder p {
     margin: 0;
+    color: #667085;
+    line-height: 1.55;
+    font-weight: 600;
+}
+
+.qrc-reminder-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 22px;
+}
+
+.qrc-reminder-actions button {
+    min-height: 44px;
+    border-radius: 10px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.qrc-reminder-secondary {
+    border: 1px solid #d0d5dd;
+    background: #fff;
+    color: #344054;
+}
+
+.qrc-reminder-primary {
+    border: 1px solid #20451f;
+    background: #20451f;
+    color: #fff;
 }
 </style>

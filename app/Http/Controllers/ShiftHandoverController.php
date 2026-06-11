@@ -62,6 +62,7 @@ class ShiftHandoverController extends Controller
         $validated = $request->validate([
             'date' => 'required|date',
             'shift_type' => 'required|string|max:30',
+            'opening_cash' => 'nullable|integer|min:0',
             'cash_theoretical' => 'required|integer|min:0',
             'cash_actual' => 'required|integer|min:0',
             'cash_note' => 'nullable|string|max:2000',
@@ -71,6 +72,10 @@ class ShiftHandoverController extends Controller
             'sold_products' => 'nullable|array',
             'sold_products.*.product_id' => 'required|exists:extras,id',
             'sold_products.*.quantity' => 'required|integer|min:1',
+            'damaged_materials' => 'nullable|array',
+            'damaged_materials.*.material_id' => 'required|exists:materials,id',
+            'damaged_materials.*.quantity' => 'required|numeric|min:0.001',
+            'damaged_materials.*.note' => 'nullable|string|max:500',
             'equipment_checklist' => 'nullable|array',
             'handover_note' => 'nullable|string|max:3000',
         ]);
@@ -83,6 +88,7 @@ class ShiftHandoverController extends Controller
 
         $handover = DB::transaction(function () use ($request, $validated) {
             $soldProducts = $this->normalizeSoldProducts($validated['sold_products'] ?? []);
+            $damagedMaterials = $this->normalizeDamagedMaterials($validated['damaged_materials'] ?? []);
             $snapshotData = $this->buildNvlSnapshotFromSoldProducts($soldProducts);
             $snapshot = $snapshotData['snapshot'];
             $hasAlert = $snapshotData['has_alert'];
@@ -98,6 +104,7 @@ class ShiftHandoverController extends Controller
                 'shift_type' => $validated['shift_type'],
                 'outgoing_employee_id' => $request->user()->id,
                 'handover_at' => now(),
+                'opening_cash' => (int) ($validated['opening_cash'] ?? 0),
                 'cash_theoretical' => $validated['cash_theoretical'],
                 'cash_actual' => $validated['cash_actual'],
                 'cash_diff' => $cashDiff,
@@ -109,6 +116,7 @@ class ShiftHandoverController extends Controller
                 'report_snapshot' => $this->buildShiftReport($start, $now),
                 'sold_products' => $snapshotData['sold_products'],
                 'nvl_snapshot' => $snapshot,
+                'damaged_materials' => $damagedMaterials,
                 'equipment_checklist' => $validated['equipment_checklist'] ?? [],
                 'handover_note' => $validated['handover_note'] ?? null,
                 'has_alert' => $hasAlert,
@@ -202,7 +210,7 @@ class ShiftHandoverController extends Controller
         return response()->streamDownload(function () use ($handovers) {
             $out = fopen('php://output', 'w');
             fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF));
-            fputcsv($out, ['Ngày', 'Ca', 'Người giao', 'Người nhận', 'Tiền mặt LT', 'Tiền mặt TT', 'Chênh lệch', 'Order', 'DT tiền mặt', 'DT CK', 'Tổng DT', 'Cảnh báo', 'Trạng thái', 'Ghi chú']);
+            fputcsv($out, ['Ngày', 'Ca', 'Người giao', 'Người nhận', 'Tiền đầu ca', 'Tiền dự kiến cuối ca', 'Tiền cuối ca', 'Chênh lệch', 'Order', 'DT tiền mặt', 'DT CK', 'Tổng DT', 'Cảnh báo', 'Trạng thái', 'Ghi chú']);
 
             foreach ($handovers as $handover) {
                 fputcsv($out, [
@@ -210,6 +218,7 @@ class ShiftHandoverController extends Controller
                     $handover->shift_type,
                     $handover->outgoingEmployee?->name,
                     $handover->incomingEmployee?->name,
+                    $handover->opening_cash,
                     $handover->cash_theoretical,
                     $handover->cash_actual,
                     $handover->cash_diff,
@@ -477,6 +486,39 @@ class ShiftHandoverController extends Controller
                 'product_id' => (int) $productId,
                 'quantity' => (int) $items->sum(fn ($item) => (int) ($item['quantity'] ?? 0)),
             ])
+            ->values()
+            ->all();
+    }
+
+    private function normalizeDamagedMaterials(array $damagedMaterials): array
+    {
+        $items = collect($damagedMaterials)
+            ->filter(fn ($item) => !empty($item['material_id']) && (float) ($item['quantity'] ?? 0) > 0)
+            ->groupBy(fn ($item) => (int) $item['material_id']);
+
+        if ($items->isEmpty()) {
+            return [];
+        }
+
+        $materials = Material::whereIn('id', $items->keys())->get(['id', 'name', 'unit'])->keyBy('id');
+
+        return $items
+            ->map(function ($rows, $materialId) use ($materials) {
+                $material = $materials->get((int) $materialId);
+
+                if (!$material) {
+                    return null;
+                }
+
+                return [
+                    'material_id' => $material->id,
+                    'material_name' => $material->name,
+                    'unit' => $material->unit,
+                    'quantity' => round((float) $rows->sum(fn ($item) => (float) ($item['quantity'] ?? 0)), 3),
+                    'note' => $rows->pluck('note')->filter()->implode('; '),
+                ];
+            })
+            ->filter()
             ->values()
             ->all();
     }

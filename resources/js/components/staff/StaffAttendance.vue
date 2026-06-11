@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, computed, onUnmounted } from 'vue';
+import { useRouter } from 'vue-router';
 import AdminLayout from '../admin/AdminLayout.vue';
 import { useAdminAuth } from '../../composables/useAdminAuth';
 import { toast } from 'vue3-toastify';
@@ -7,6 +8,7 @@ import axios from 'axios';
 import { Clock, LogIn, LogOut, CalendarCheck, CalendarX, Calendar, AlertCircle, CheckCircle2, ClipboardCheck, Hourglass } from 'lucide-vue-next';
 
 const { authHeader } = useAdminAuth();
+const router = useRouter();
 
 const checkInLoading = ref({});
 const checkOutLoading = ref({});
@@ -16,6 +18,11 @@ const loadingRecords = ref(true);
 const todaySchedules = ref([]);
 const todayAttendances = ref([]);
 const SHIFTS = ref([]);
+const handoverReminder = ref({
+    show: false,
+    type: '',
+    shiftName: '',
+});
 
 const now = new Date();
 const selectedMonth = ref(now.getMonth() + 1);
@@ -78,6 +85,7 @@ async function checkIn(shiftKey) {
             lng: coords.lng
         }, { headers: authHeader() });
         toast.success(`Check-in ca ${getShiftName(shiftKey)} thành công!`);
+        showHandoverReminder('receive', shiftKey);
         await fetchToday();
         await fetchMonthRecords();
     } catch(e) { 
@@ -97,6 +105,7 @@ async function checkOut(shiftKey) {
             lng: coords.lng
         }, { headers: authHeader() });
         toast.success(`Check-out ca ${getShiftName(shiftKey)} thành công!`);
+        showHandoverReminder('handover', shiftKey);
         await fetchToday();
         await fetchMonthRecords();
     } catch(e) { 
@@ -196,6 +205,24 @@ function getErrorMsg(e, defaultMsg) {
         return Object.values(e.response.data.errors).flat()[0];
     }
     return e.response?.data?.message || e.message || defaultMsg;
+}
+
+function showHandoverReminder(type, shiftKey) {
+    handoverReminder.value = {
+        show: true,
+        type,
+        shiftName: getShiftName(shiftKey),
+    };
+}
+
+function closeHandoverReminder() {
+    handoverReminder.value.show = false;
+}
+
+function goToShiftHandover() {
+    const tab = handoverReminder.value.type === 'receive' ? 'pending' : 'create';
+    handoverReminder.value.show = false;
+    router.push(`/staff/shift-handover?tab=${tab}`);
 }
 </script>
 
@@ -338,6 +365,27 @@ function getErrorMsg(e, defaultMsg) {
                 </div>
             </div>
 
+        </div>
+
+        <div v-if="handoverReminder.show" class="att-reminder-backdrop" @click.self="closeHandoverReminder">
+            <div class="att-reminder">
+                <div class="att-reminder-icon" :class="handoverReminder.type">
+                    <ClipboardCheck :size="30" />
+                </div>
+                <h3>{{ handoverReminder.type === 'receive' ? 'Nhắc nhận ca' : 'Nhắc giao ca' }}</h3>
+                <p>
+                    {{ handoverReminder.type === 'receive'
+                        ? `Bạn vừa check-in ${handoverReminder.shiftName}. Vào màn nhận ca để kiểm tra bàn giao từ ca trước.`
+                        : `Bạn vừa check-out ${handoverReminder.shiftName}. Vào màn giao ca để bàn giao tiền, món bán và ghi chú cho ca sau.`
+                    }}
+                </p>
+                <div class="att-reminder-actions">
+                    <button type="button" class="att-reminder-secondary" @click="closeHandoverReminder">Để sau</button>
+                    <button type="button" class="att-reminder-primary" @click="goToShiftHandover">
+                        {{ handoverReminder.type === 'receive' ? 'Đi nhận ca' : 'Đi giao ca' }}
+                    </button>
+                </div>
+            </div>
         </div>
     </AdminLayout>
 </template>
@@ -686,5 +734,82 @@ function getErrorMsg(e, defaultMsg) {
     padding: 40px !important;
     color: #94a3b8 !important;
     font-weight: 500 !important;
+}
+
+.att-reminder-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1400;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(15, 23, 42, 0.55);
+}
+
+.att-reminder {
+    width: min(420px, 100%);
+    padding: 26px;
+    border-radius: 20px;
+    background: #fff;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.25);
+    text-align: center;
+}
+
+.att-reminder-icon {
+    width: 58px;
+    height: 58px;
+    margin: 0 auto 14px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #ecfdf3;
+    color: #15803d;
+}
+
+.att-reminder-icon.handover {
+    background: #fff7ed;
+    color: #c2410c;
+}
+
+.att-reminder h3 {
+    margin: 0 0 8px;
+    color: #101828;
+    font-size: 1.35rem;
+    font-weight: 800;
+}
+
+.att-reminder p {
+    margin: 0;
+    color: #667085;
+    line-height: 1.55;
+    font-weight: 600;
+}
+
+.att-reminder-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 22px;
+}
+
+.att-reminder-actions button {
+    min-height: 44px;
+    border-radius: 10px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.att-reminder-secondary {
+    border: 1px solid #d0d5dd;
+    background: #fff;
+    color: #344054;
+}
+
+.att-reminder-primary {
+    border: 1px solid #20451f;
+    background: #20451f;
+    color: #fff;
 }
 </style>

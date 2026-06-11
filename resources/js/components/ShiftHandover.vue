@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import AdminLayout from './admin/AdminLayout.vue';
 import { useAdminAuth } from '../composables/useAdminAuth';
 import { toast } from 'vue3-toastify';
@@ -17,6 +18,7 @@ import {
 } from 'lucide-vue-next';
 
 const { authHeader } = useAdminAuth();
+const route = useRoute();
 
 const loading = ref(false);
 const saving = ref(false);
@@ -333,6 +335,9 @@ async function exportHandovers() {
 }
 
 onMounted(async () => {
+    if (['create', 'pending', 'history'].includes(route.query.tab)) {
+        activeTab.value = route.query.tab;
+    }
     await Promise.all([fetchPrepare(), fetchHandovers()]);
 });
 </script>

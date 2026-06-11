@@ -13,6 +13,7 @@ class ShiftHandover extends Model
         'incoming_employee_id',
         'handover_at',
         'received_at',
+        'opening_cash',
         'cash_theoretical',
         'cash_actual',
         'cash_diff',
@@ -24,6 +25,7 @@ class ShiftHandover extends Model
         'report_snapshot',
         'sold_products',
         'nvl_snapshot',
+        'damaged_materials',
         'equipment_checklist',
         'handover_note',
         'has_alert',
@@ -34,6 +36,7 @@ class ShiftHandover extends Model
     protected $casts = [
         'handover_at' => 'datetime',
         'received_at' => 'datetime',
+        'opening_cash' => 'integer',
         'cash_theoretical' => 'integer',
         'cash_actual' => 'integer',
         'cash_diff' => 'integer',
@@ -44,6 +47,7 @@ class ShiftHandover extends Model
         'report_snapshot' => 'array',
         'sold_products' => 'array',
         'nvl_snapshot' => 'array',
+        'damaged_materials' => 'array',
         'equipment_checklist' => 'array',
         'has_alert' => 'boolean',
     ];

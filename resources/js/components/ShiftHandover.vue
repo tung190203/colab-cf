@@ -9,8 +9,10 @@ import {
     CheckCircle2,
     ClipboardPenLine,
     Eye,
+    Plus,
     RefreshCw,
     Save,
+    Trash2,
     XCircle,
 } from 'lucide-vue-next';
 
@@ -24,7 +26,6 @@ const handovers = ref([]);
 const selected = ref(null);
 const disputeNote = ref('');
 const exportMonth = ref(new Date().toISOString().slice(0, 7));
-const productSearch = ref('');
 const menuProducts = ref([]);
 const filters = ref({
     date: '',
@@ -36,7 +37,9 @@ const filters = ref({
 const form = ref(defaultForm());
 
 const pendingHandovers = computed(() => handovers.value.filter((item) => item.status === 'pending'));
-const selectedProductIds = computed(() => form.value.sold_products.map((item) => Number(item.product_id)));
+const materialOptions = computed(() => prepare.value?.materials || []);
+const selectedProductIds = computed(() => form.value.sold_products.map((item) => Number(item.product_id)).filter(Boolean));
+const selectedDamagedMaterialIds = computed(() => form.value.damaged_materials.map((item) => Number(item.material_id)).filter(Boolean));
 const selectedSoldProducts = computed(() => (
     form.value.sold_products
         .map((item) => {
@@ -45,20 +48,10 @@ const selectedSoldProducts = computed(() => (
         })
         .filter(Boolean)
 ));
-const filteredProducts = computed(() => {
-    const search = productSearch.value.trim().toLowerCase();
-    return menuProducts.value
-        .filter((product) => !selectedProductIds.value.includes(Number(product.id)))
-        .filter((product) => {
-            if (!search) return true;
-            return [product.name, product.category, product.sku]
-                .filter(Boolean)
-                .some((value) => String(value).toLowerCase().includes(search));
-        });
-});
 const soldProductTotalQuantity = computed(() => (
     form.value.sold_products.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
 ));
+const expectedEndingCash = computed(() => Number(form.value.opening_cash || 0) + Number(form.value.revenue_cash || 0));
 const shiftReport = computed(() => prepare.value?.report || null);
 const reportSummary = computed(() => shiftReport.value?.summary || {
     total_orders: form.value.total_orders,
@@ -68,9 +61,9 @@ const reportSummary = computed(() => shiftReport.value?.summary || {
     transfer_total: form.value.revenue_transfer,
 });
 const reportCashFlow = computed(() => {
-    const openingCash = Number(prepare.value?.cash_received_previous || 0);
+    const openingCash = Number(form.value.opening_cash || 0);
     const cashIn = Number(reportSummary.value.cash_total || 0);
-    const theoretical = Number(form.value.cash_theoretical || 0);
+    const theoretical = Number(expectedEndingCash.value || 0);
 
     return [
         { label: 'Số dư đầu ca', amount: openingCash },
@@ -80,13 +73,14 @@ const reportCashFlow = computed(() => {
 });
 
 const cashDiff = computed(() => {
-    return Number(form.value.cash_actual || 0) - Number(form.value.cash_theoretical || 0);
+    return Number(form.value.cash_actual || 0) - expectedEndingCash.value;
 });
 
 function defaultForm() {
     return {
         date: '',
         shift_type: 'sang',
+        opening_cash: 0,
         cash_theoretical: 0,
         cash_actual: '',
         cash_note: '',
@@ -94,6 +88,7 @@ function defaultForm() {
         revenue_cash: 0,
         revenue_transfer: 0,
         sold_products: [],
+        damaged_materials: [],
         materials: [],
         equipment_checklist: {
             may_pha: { ok: true, note: '' },
@@ -134,6 +129,13 @@ function reportFor(handover) {
     return handover?.report_snapshot || null;
 }
 
+function shiftLabel(shiftType) {
+    return {
+        sang: 'Ca sáng',
+        chieu: 'Ca chiều',
+    }[shiftType] || shiftType;
+}
+
 function equipmentLabel(key) {
     return {
         may_pha: 'Máy pha cà phê',
@@ -146,26 +148,56 @@ function equipmentLabel(key) {
 
 function statusLabel(status) {
     return {
-        pending: 'Chờ nhận ca',
+        pending: 'Nhận ca',
         confirmed: 'Đã nhận ca',
         disputed: 'Có sai lệch',
     }[status] || status;
 }
 
-function addSoldProduct(product) {
+function addSoldProductRow() {
     form.value.sold_products.push({
-        product_id: product.id,
+        product_id: '',
         quantity: 1,
     });
-    productSearch.value = '';
 }
 
 function removeSoldProduct(productId) {
-    form.value.sold_products = form.value.sold_products.filter((item) => Number(item.product_id) !== Number(productId));
+    form.value.sold_products = form.value.sold_products.filter((item) => item !== productId);
+}
+
+function productOptionsFor(item) {
+    return menuProducts.value.filter((product) => (
+        Number(product.id) === Number(item.product_id)
+        || !selectedProductIds.value.includes(Number(product.id))
+    ));
 }
 
 function normalizeSoldProductQuantity(item) {
     item.quantity = Math.max(1, Number(item.quantity || 1));
+}
+
+function addDamagedMaterialRow() {
+    form.value.damaged_materials.push({
+        material_id: '',
+        quantity: 1,
+        note: '',
+    });
+}
+
+function removeDamagedMaterialRow(item) {
+    form.value.damaged_materials = form.value.damaged_materials.filter((row) => row !== item);
+}
+
+function materialOptionsFor(item) {
+    return materialOptions.value.filter((material) => (
+        Number(material.id) === Number(item.material_id)
+        || !selectedDamagedMaterialIds.value.includes(Number(material.id))
+    ));
+}
+
+function materialLabel(materialId) {
+    const material = materialOptions.value.find((item) => Number(item.id) === Number(materialId));
+    return material ? `${material.name} (${material.unit})` : 'Chọn NVL';
 }
 
 async function fetchPrepare() {
@@ -178,6 +210,7 @@ async function fetchPrepare() {
             ...defaultForm(),
             date: res.data.date,
             shift_type: res.data.shift_type,
+            opening_cash: res.data.cash_received_previous,
             cash_theoretical: res.data.cash_theoretical,
             total_orders: res.data.total_orders,
             revenue_cash: res.data.revenue_cash,
@@ -224,14 +257,17 @@ function resetFilters() {
 }
 
 async function saveHandover() {
-    if (Math.abs(cashDiff.value) > 50000 && !form.value.cash_note.trim()) {
-        toast.warning('Vui lòng ghi chú lý do chênh lệch tiền mặt');
-        return;
-    }
+    form.value.cash_theoretical = expectedEndingCash.value;
+
+    const payload = {
+        ...form.value,
+        sold_products: form.value.sold_products.filter((item) => item.product_id && Number(item.quantity || 0) > 0),
+        damaged_materials: form.value.damaged_materials.filter((item) => item.material_id && Number(item.quantity || 0) > 0),
+    };
 
     saving.value = true;
     try {
-        await axios.post('/api/shift-handover', form.value, { headers: authHeader() });
+        await axios.post('/api/shift-handover', payload, { headers: authHeader() });
         toast.success('Đã lưu biên bản giao ca');
         await Promise.all([fetchPrepare(), fetchHandovers()]);
         activeTab.value = 'pending';
@@ -246,6 +282,8 @@ async function confirmHandover(handover) {
     try {
         await axios.post(`/api/shift-handover/${handover.id}/confirm`, {}, { headers: authHeader() });
         toast.success('Đã xác nhận nhận ca');
+        selected.value = null;
+        disputeNote.value = '';
         await fetchHandovers();
     } catch (error) {
         toast.error(error.response?.data?.message || 'Lỗi khi xác nhận nhận ca');
@@ -309,7 +347,7 @@ onMounted(async () => {
                     <ClipboardPenLine :size="18" /> Tạo giao ca
                 </button>
                 <button :class="{ active: activeTab === 'pending' }" @click="activeTab = 'pending'">
-                    <CheckCircle2 :size="18" /> Chờ nhận ca
+                    <CheckCircle2 :size="18" /> Nhận ca
                     <span v-if="pendingHandovers.length">{{ pendingHandovers.length }}</span>
                 </button>
                 <button :class="{ active: activeTab === 'history' }" @click="activeTab = 'history'">
@@ -335,174 +373,97 @@ onMounted(async () => {
                         Bạn không có lịch làm ca {{ form.shift_type }} ngày {{ form.date }}, nên không thể tạo biên bản giao ca này.
                     </div>
 
-                    <div class="sh-report-hero">
-                        <div class="sh-report-title">
-                            <span>Báo cáo chốt ca</span>
+                    <div class="sh-shift-info">
+                        <div>
+                            <span>Ca giao</span>
+                            <strong>{{ shiftLabel(form.shift_type) }}</strong>
+                        </div>
+                        <div>
+                            <span>Ngày giao</span>
+                            <strong>{{ form.date }}</strong>
+                        </div>
+                        <div>
+                            <span>Thời gian tính ca</span>
                             <strong>{{ formatDateTime(shiftReport?.period_start) }} - {{ formatDateTime(shiftReport?.period_end) }}</strong>
                         </div>
-                        <div class="sh-report-kpis">
-                            <div>
-                                <span>Doanh thu NET</span>
-                                <strong>{{ formatMoney(reportSummary.total_revenue) }}</strong>
-                            </div>
-                            <div>
-                                <span>Số hóa đơn</span>
-                                <strong>{{ reportSummary.total_orders }}</strong>
-                            </div>
-                            <div>
-                                <span>Trung bình hóa đơn</span>
-                                <strong>{{ formatMoney(reportSummary.average_order_value) }}</strong>
-                            </div>
-                        </div>
                     </div>
 
-                    <div class="sh-grid two">
-                        <div class="sh-block">
-                            <h4>Đối soát tiền mặt</h4>
-                            <div class="sh-stats">
-                                <span>Tiền trong két dự kiến</span>
-                                <strong>{{ formatMoney(form.cash_theoretical) }}</strong>
-                            </div>
-                            <div class="sh-cash-breakdown">
-                                <span v-for="row in reportCashFlow" :key="row.label">
-                                    {{ row.label }}: {{ formatMoney(row.amount) }}
-                                </span>
-                            </div>
+                    <div class="sh-block">
+                        <h4>1. Tiền bàn giao</h4>
+                        <div class="sh-grid two compact">
                             <label class="sh-field">
-                                <span>Tiền mặt thực đếm</span>
+                                <span>Tiền bàn giao đầu ca</span>
+                                <input v-model.number="form.opening_cash" type="number" min="0" />
+                            </label>
+                            <label class="sh-field">
+                                <span>Tiền cuối ca</span>
                                 <input v-model.number="form.cash_actual" type="number" min="0" />
                             </label>
-                            <div class="sh-diff" :class="{ warn: Math.abs(cashDiff) > 50000 }">
-                                Chênh lệch: {{ formatMoney(cashDiff) }}
-                            </div>
-                            <label class="sh-field">
-                                <span>Ghi chú tiền mặt</span>
-                                <textarea v-model="form.cash_note" rows="3"></textarea>
-                            </label>
-                        </div>
-
-                        <div class="sh-block">
-                            <h4>Phương thức thanh toán</h4>
-                            <div class="sh-report-table">
-                                <div class="sh-report-row head">
-                                    <span>PTTT</span>
-                                    <span>Số HĐ</span>
-                                    <span>Doanh thu</span>
-                                </div>
-                                <div v-for="method in shiftReport?.payment_methods || []" :key="method.name" class="sh-report-row">
-                                    <strong>{{ method.name }}</strong>
-                                    <span>{{ method.orders_count }}</span>
-                                    <span>{{ formatMoney(method.revenue) }}</span>
-                                </div>
-                                <div v-if="!shiftReport?.payment_methods?.length" class="sh-empty compact">Chưa có thanh toán trong ca</div>
-                            </div>
-
-                            <h4 class="sh-subtitle">Nguồn đơn hàng</h4>
-                            <div class="sh-report-bars">
-                                <div v-for="source in shiftReport?.sources || []" :key="source.name" class="sh-report-bar">
-                                    <div>
-                                        <strong>{{ source.name }}</strong>
-                                        <span>{{ source.orders_count }} HĐ · {{ formatMoney(source.revenue) }}</span>
-                                    </div>
-                                    <em>{{ formatPercent(source.revenue, reportSummary.total_revenue) }}</em>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="sh-grid two">
-                        <div class="sh-block">
-                            <h4>Nhóm món</h4>
-                            <div class="sh-report-table">
-                                <div class="sh-report-row head">
-                                    <span>Tên</span>
-                                    <span>SL</span>
-                                    <span>Doanh thu</span>
-                                </div>
-                                <div v-for="group in shiftReport?.product_groups || []" :key="group.name" class="sh-report-row">
-                                    <strong>{{ group.name }}</strong>
-                                    <span>{{ group.quantity }}</span>
-                                    <span>{{ formatMoney(group.revenue) }}</span>
-                                </div>
-                                <div v-if="!shiftReport?.product_groups?.length" class="sh-empty compact">Chưa có món bán trong ca</div>
-                            </div>
-                        </div>
-
-                        <div class="sh-block">
-                            <h4>Top món trong ca</h4>
-                            <div class="sh-report-table">
-                                <div class="sh-report-row head">
-                                    <span>Tên món</span>
-                                    <span>SL</span>
-                                    <span>Doanh thu</span>
-                                </div>
-                                <div v-for="product in shiftReport?.top_products || []" :key="product.name" class="sh-report-row">
-                                    <strong>{{ product.name }}</strong>
-                                    <span>{{ product.quantity }}</span>
-                                    <span>{{ formatMoney(product.revenue) }}</span>
-                                </div>
-                                <div v-if="!shiftReport?.top_products?.length" class="sh-empty compact">Chưa có món bán trong ca</div>
-                            </div>
                         </div>
                     </div>
 
                     <div class="sh-block">
                         <div class="sh-block-head">
                             <div>
-                                <h4>Bổ sung món cho kiểm NVL</h4>
-                                <p>Chỉ nhập khi món bán chưa có trong POS/booking hoặc cần đối chiếu công thức NVL.</p>
+                                <h4>2. Hàng bán trong ca</h4>
+                                <p>Thêm món bán từ POS để tính NVL đã dùng.</p>
                             </div>
-                            <div class="sh-sold-total">{{ soldProductTotalQuantity }} món</div>
+                            <button type="button" class="sh-add-btn" @click="addSoldProductRow">
+                                <Plus :size="17" /> Thêm món
+                            </button>
                         </div>
-
-                        <div class="sh-product-picker">
-                            <input v-model="productSearch" type="search" placeholder="Tìm món theo tên, SKU hoặc nhóm..." />
-                            <div class="sh-product-results" v-if="filteredProducts.length">
-                                <button
-                                    v-for="product in filteredProducts"
-                                    :key="product.id"
-                                    type="button"
-                                    class="sh-product-option"
-                                    :class="{ warning: !product.has_recipe }"
-                                    @click="addSoldProduct(product)"
-                                >
-                                    <strong>{{ product.name }}</strong>
-                                    <span>{{ product.sku || 'Chưa có SKU' }} · {{ product.category }}</span>
-                                    <em v-if="!product.has_recipe">Chưa có công thức</em>
+                        <div class="sh-compact-list" v-if="form.sold_products.length">
+                            <div v-for="item in form.sold_products" :key="item" class="sh-compact-row">
+                                <select v-model="item.product_id">
+                                    <option value="">Chọn món</option>
+                                    <option v-for="product in productOptionsFor(item)" :key="product.id" :value="product.id">
+                                        {{ product.name }} · {{ product.category }}
+                                    </option>
+                                </select>
+                                <input v-model.number="item.quantity" type="number" min="1" @blur="normalizeSoldProductQuantity(item)" />
+                                <button type="button" class="sh-icon-danger" @click="removeSoldProduct(item)">
+                                    <Trash2 :size="17" />
                                 </button>
                             </div>
                         </div>
-
-                        <div class="sh-sold-list" v-if="selectedSoldProducts.length">
-                            <div v-for="entry in selectedSoldProducts" :key="entry.item.product_id" class="sh-sold-row" :class="{ warning: !entry.product.has_recipe }">
-                                <div>
-                                    <strong>{{ entry.product.name }}</strong>
-                                    <span>{{ entry.product.sku || 'Chưa có SKU' }} · {{ entry.product.category }}</span>
-                                    <em v-if="!entry.product.has_recipe">Món này cần bổ sung công thức</em>
-                                </div>
-                                <input v-model.number="entry.item.quantity" type="number" min="1" @blur="normalizeSoldProductQuantity(entry.item)" />
-                                <button type="button" @click="removeSoldProduct(entry.item.product_id)">Xoá</button>
-                            </div>
-                        </div>
-                        <div v-else class="sh-inline-empty">Chưa chọn món nào trong ca</div>
+                        <div v-else class="sh-inline-empty">Chưa thêm món bán</div>
                     </div>
 
-                    <div class="sh-grid two">
-                        <div class="sh-block">
-                            <h4>Thiết bị</h4>
-                            <div class="sh-equipment">
-                                <div v-for="(_, key) in form.equipment_checklist" :key="key" class="sh-equipment-row">
-                                    <label>
-                                        <input v-model="form.equipment_checklist[key].ok" type="checkbox" />
-                                        {{ equipmentLabel(key) }}
-                                    </label>
-                                    <input v-if="!form.equipment_checklist[key].ok" v-model="form.equipment_checklist[key].note" type="text" placeholder="Mô tả lỗi" />
-                                </div>
+                    <div class="sh-block">
+                        <div class="sh-block-head">
+                            <div>
+                                <h4>3. Ghi chú & NVL hỏng</h4>
+                                <p>Ghi chú chung và thêm từng NVL hỏng nếu có.</p>
                             </div>
+                            <button type="button" class="sh-add-btn" @click="addDamagedMaterialRow">
+                                <Plus :size="17" /> Thêm NVL hỏng
+                            </button>
                         </div>
-                        <div class="sh-block">
-                            <h4>Ghi chú bàn giao</h4>
-                            <textarea v-model="form.handover_note" rows="8" placeholder="Sự cố trong ca, việc cần chuyển giao, yêu cầu đặt hàng..."></textarea>
+                        <label class="sh-field no-top">
+                            <span>Ghi chú bàn giao</span>
+                            <textarea v-model="form.handover_note" rows="4" placeholder="Sự cố trong ca, việc cần chuyển giao, yêu cầu đặt hàng..."></textarea>
+                        </label>
+                        <div class="sh-compact-list" v-if="form.damaged_materials.length">
+                            <div class="sh-list-title">NVL hỏng</div>
+                            <div class="sh-compact-row damaged head">
+                                <span>NVL</span>
+                                <span>SL hỏng</span>
+                                <span>Ghi chú</span>
+                                <span></span>
+                            </div>
+                            <div v-for="item in form.damaged_materials" :key="item" class="sh-compact-row damaged">
+                                <select v-model="item.material_id">
+                                    <option value="">Chọn NVL</option>
+                                    <option v-for="material in materialOptionsFor(item)" :key="material.id" :value="material.id">
+                                        {{ material.name }} · {{ material.unit }}
+                                    </option>
+                                </select>
+                                <input v-model.number="item.quantity" type="number" min="0.001" step="0.001" />
+                                <input v-model="item.note" type="text" placeholder="Lý do hỏng" />
+                                <button type="button" class="sh-icon-danger" @click="removeDamagedMaterialRow(item)">
+                                    <Trash2 :size="17" />
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -517,7 +478,7 @@ onMounted(async () => {
             <section v-else class="sh-card">
                 <div class="sh-header">
                     <div>
-                        <h3>{{ activeTab === 'pending' ? 'Biên bản chờ nhận ca' : 'Lịch sử giao ca' }}</h3>
+                        <h3>{{ activeTab === 'pending' ? 'Biên bản nhận ca' : 'Lịch sử giao ca' }}</h3>
                         <p>{{ handovers.length }} biên bản</p>
                     </div>
                     <div class="sh-header-actions">
@@ -539,7 +500,7 @@ onMounted(async () => {
                     </select>
                     <select v-model="filters.status">
                         <option value="">Tất cả trạng thái</option>
-                        <option value="pending">Chờ nhận ca</option>
+                        <option value="pending">Nhận ca</option>
                         <option value="confirmed">Đã nhận ca</option>
                         <option value="disputed">Có sai lệch</option>
                     </select>
@@ -573,74 +534,63 @@ onMounted(async () => {
                 <div class="sh-modal">
                     <div class="sh-header">
                         <div>
-                            <h3>Chi tiết giao ca #{{ selected.id }}</h3>
-                            <p>{{ statusLabel(selected.status) }}</p>
+                            <h3>Chi tiết nhận ca #{{ selected.id }}</h3>
                         </div>
                         <button class="sh-icon-btn" @click="selected = null"><XCircle :size="20" /></button>
                     </div>
                     <div class="sh-modal-body">
-                        <div class="sh-grid two compact">
-                            <div class="sh-stats"><span>Tiền mặt thực tế</span><strong>{{ formatMoney(selected.cash_actual) }}</strong></div>
-                            <div class="sh-stats"><span>Chênh lệch</span><strong>{{ formatMoney(selected.cash_diff) }}</strong></div>
-                            <div class="sh-stats"><span>Order</span><strong>{{ selected.total_orders }}</strong></div>
-                            <div class="sh-stats"><span>Doanh thu</span><strong>{{ formatMoney(selected.total_revenue) }}</strong></div>
+                        <div class="sh-shift-info">
+                            <div>
+                                <span>Ca nhận</span>
+                                <strong>{{ shiftLabel(selected.receive_shift_type || selected.shift_type) }}</strong>
+                            </div>
+                            <div>
+                                <span>Thời gian ghi nhận giao ca</span>
+                                <strong>{{ formatDateTime(selected.handover_at) }}</strong>
+                            </div>
+                            <div>
+                                <span>Người giao</span>
+                                <strong>{{ selected.outgoing_employee?.name || 'Không rõ' }}</strong>
+                            </div>
                         </div>
-                        <template v-if="reportFor(selected)">
-                            <h4>Báo cáo chốt ca</h4>
-                            <div class="sh-report-table">
-                                <div class="sh-report-row head">
-                                    <span>PTTT</span>
-                                    <span>Số HĐ</span>
-                                    <span>Doanh thu</span>
-                                </div>
-                                <div v-for="method in reportFor(selected).payment_methods" :key="method.name" class="sh-report-row">
-                                    <strong>{{ method.name }}</strong>
-                                    <span>{{ method.orders_count }}</span>
-                                    <span>{{ formatMoney(method.revenue) }}</span>
-                                </div>
-                            </div>
-                            <div class="sh-grid two compact">
-                                <div class="sh-block nested">
-                                    <h4>Nguồn đơn</h4>
-                                    <div class="sh-report-bars">
-                                        <div v-for="source in reportFor(selected).sources" :key="source.name" class="sh-report-bar">
-                                            <div>
-                                                <strong>{{ source.name }}</strong>
-                                                <span>{{ source.orders_count }} HĐ · {{ formatMoney(source.revenue) }}</span>
-                                            </div>
-                                            <em>{{ formatPercent(source.revenue, reportFor(selected).summary.total_revenue) }}</em>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="sh-block nested">
-                                    <h4>Top món</h4>
-                                    <div class="sh-sold-detail">
-                                        <span v-for="product in reportFor(selected).top_products" :key="product.name">
-                                            {{ product.name }} x {{ product.quantity }} · {{ formatMoney(product.revenue) }}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </template>
-                        <template v-if="selected.sold_products?.length">
-                            <h4>Món bổ sung cho NVL</h4>
-                            <div class="sh-sold-detail">
-                                <span v-for="product in selected.sold_products" :key="product.product_id">
-                                    {{ product.product_name }} x {{ product.quantity }}
-                                </span>
-                            </div>
-                        </template>
-                        <h4>NVL dự kiến theo công thức</h4>
+
+                        <h4>1. Tiền nhận đầu ca</h4>
+                        <div class="sh-grid compact">
+                            <div class="sh-stats"><span>Tiền nhận từ ca trước</span><strong>{{ formatMoney(selected.cash_actual) }}</strong></div>
+                        </div>
+
+                        <h4>2.Thống kê NVL</h4>
                         <div class="sh-snapshot">
+                            <div class="sh-snapshot-row head">
+                                <span>NVL</span>
+                                <span>Đã dùng</span>
+                                <span>Còn lại</span>
+                                <span>Trạng thái</span>
+                            </div>
                             <div v-for="item in selected.nvl_snapshot" :key="item.material_id" class="sh-snapshot-row" :class="{ warn: item.has_alert }">
                                 <strong>{{ item.material_name }}</strong>
-                                <span>Cần {{ formatNumber(item.required ?? item.diff) }} {{ item.unit }}</span>
-                                <em v-if="item.reason">{{ item.reason }}</em>
+                                <span>Đã dùng {{ formatNumber(item.required ?? item.diff) }} {{ item.unit }}</span>
+                                <span>Còn lại {{ formatNumber(item.actual) }} {{ item.unit }}</span>
+                                <em>{{ item.has_alert ? (item.reason || 'Đang cảnh báo') : 'Ổn' }}</em>
                             </div>
                             <div v-if="!selected.nvl_snapshot?.length" class="sh-empty compact">Chưa có dữ liệu NVL</div>
                         </div>
-                        <h4>Ghi chú</h4>
+
+                        <h4>3. Ghi chú & NVL hỏng</h4>
                         <p class="sh-note">{{ selected.handover_note || 'Không có' }}</p>
+                        <div v-if="selected.damaged_materials?.length" class="sh-damaged-list">
+                            <div class="sh-list-title">NVL hỏng</div>
+                            <div class="sh-damaged-item head">
+                                <span>NVL</span>
+                                <span>SL hỏng</span>
+                                <span>Ghi chú</span>
+                            </div>
+                            <div v-for="item in selected.damaged_materials" :key="item.material_id" class="sh-damaged-item">
+                                <strong>{{ item.material_name }}</strong>
+                                <span>{{ formatNumber(item.quantity) }} {{ item.unit }}</span>
+                                <em>{{ item.note || 'Không ghi lý do' }}</em>
+                            </div>
+                        </div>
                         <template v-if="selected.dispute_note">
                             <h4>Ghi chú sai lệch</h4>
                             <p class="sh-note dispute">{{ selected.dispute_note }}</p>
@@ -672,7 +622,8 @@ onMounted(async () => {
 .sh-tabs span { min-width: 22px; height: 22px; border-radius: 999px; background: #dc2626; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
 .sh-card, .sh-block { background: #fff; border: 1px solid #e8ece8; border-radius: 8px; }
 .sh-card { padding: 18px; }
-.sh-block { padding: 16px; }
+.sh-card > .sh-block + .sh-block { margin-top: 18px; }
+.sh-block { padding: 20px; }
 .sh-block.nested { border: 0; background: #f9fafb; }
 .sh-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; margin-bottom: 16px; }
 .sh-header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
@@ -680,6 +631,10 @@ onMounted(async () => {
 .sh-filters { display: grid; grid-template-columns: 160px 150px 180px minmax(180px, 1fr) auto auto; gap: 10px; margin-bottom: 16px; align-items: center; }
 .sh-header h3, .sh-block h4, .sh-modal-body h4 { margin: 0; color: #101828; }
 .sh-header p { margin: 4px 0 0; color: #667085; font-weight: 700; }
+.sh-shift-info { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.sh-shift-info div { padding: 12px; border: 1px solid #e4e7ec; border-radius: 8px; background: #f9fafb; }
+.sh-shift-info span { display: block; color: #667085; font-size: 12px; font-weight: 900; text-transform: uppercase; }
+.sh-shift-info strong { display: block; margin-top: 4px; color: #101828; overflow-wrap: anywhere; }
 .sh-subtitle { margin-top: 16px !important; }
 .sh-report-hero { display: grid; grid-template-columns: minmax(240px, .8fr) minmax(0, 1.2fr); gap: 14px; margin-bottom: 16px; padding: 16px; border: 1px solid #dce7dc; border-radius: 8px; background: #f7fbf4; }
 .sh-report-title { display: flex; flex-direction: column; justify-content: center; gap: 6px; }
@@ -701,8 +656,9 @@ onMounted(async () => {
 .sh-report-bar strong { color: #101828; }
 .sh-report-bar span { margin-top: 2px; color: #667085; font-size: 12px; font-weight: 800; }
 .sh-report-bar em { min-width: 44px; color: #20451f; font-style: normal; font-weight: 900; text-align: right; }
-.sh-block-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 14px; }
+.sh-block-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 18px; }
 .sh-block-head p { margin: 4px 0 0; color: #667085; font-size: 13px; font-weight: 700; }
+.sh-add-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; padding: 0 12px; border: 1px solid #20451f; border-radius: 8px; background: #fff; color: #20451f; font-weight: 900; cursor: pointer; white-space: nowrap; }
 .sh-sold-total { min-width: 70px; padding: 8px 10px; border-radius: 8px; background: #f0fdf4; color: #15803d; text-align: center; font-weight: 900; }
 .sh-product-picker { display: flex; flex-direction: column; gap: 10px; }
 .sh-product-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; max-height: 320px; overflow-y: auto; padding-right: 4px; }
@@ -716,6 +672,13 @@ onMounted(async () => {
 .sh-sold-row strong, .sh-sold-row span { display: block; }
 .sh-sold-row input { text-align: center; }
 .sh-sold-row button { min-height: 38px; border: 1px solid #fecaca; border-radius: 8px; background: #fff; color: #b42318; font-weight: 800; cursor: pointer; }
+.sh-compact-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.sh-list-title { color: #344054; font-size: 13px; font-weight: 900; }
+.sh-compact-row { display: grid; grid-template-columns: minmax(0, 1fr) 110px 42px; gap: 8px; align-items: center; }
+.sh-compact-row.damaged { grid-template-columns: minmax(0, 1fr) 110px minmax(160px, .8fr) 42px; }
+.sh-compact-row.head { min-height: 32px; padding: 0 4px; color: #667085; font-size: 12px; font-weight: 900; text-transform: uppercase; }
+.sh-compact-row input[type="number"] { text-align: center; }
+.sh-icon-danger { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 40px; border: 1px solid #fecaca; border-radius: 8px; background: #fff; color: #b42318; cursor: pointer; }
 .sh-inline-empty { padding: 14px; margin-top: 12px; border: 1px dashed #d0d5dd; border-radius: 8px; color: #667085; text-align: center; font-weight: 800; }
 .sh-sold-detail { display: flex; flex-wrap: wrap; gap: 8px; }
 .sh-sold-detail span { padding: 7px 10px; border-radius: 999px; background: #f2f4f7; color: #344054; font-weight: 800; }
@@ -723,6 +686,7 @@ onMounted(async () => {
 .sh-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .sh-grid.compact { gap: 10px; margin-bottom: 0; }
 .sh-field { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
+.sh-field.no-top { margin-top: 0; }
 .sh-field span { color: #344054; font-weight: 800; font-size: 13px; }
 input, textarea, select { width: 100%; min-height: 40px; border: 1px solid #d0d5dd; border-radius: 8px; padding: 8px 10px; font: inherit; outline: 0; }
 textarea { resize: vertical; }
@@ -764,13 +728,21 @@ textarea { resize: vertical; }
 .sh-icon-btn { width: 40px; padding: 0; border: 1px solid #d0d5dd; background: #fff; color: #344054; }
 .sh-modal-body { display: flex; flex-direction: column; gap: 12px; }
 .sh-snapshot { display: flex; flex-direction: column; border: 1px solid #eaecf0; border-radius: 8px; overflow: hidden; }
-.sh-snapshot-row { display: grid; grid-template-columns: 1fr 180px 1fr; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #eaecf0; }
+.sh-snapshot-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px 150px minmax(120px, .8fr); gap: 10px; padding: 10px 12px; border-bottom: 1px solid #eaecf0; }
 .sh-snapshot-row:last-child { border-bottom: 0; }
+.sh-snapshot-row span, .sh-snapshot-row em { color: #344054; font-style: normal; font-weight: 800; }
+.sh-snapshot-row.head { background: #f9fafb; color: #667085; font-size: 12px; font-weight: 900; text-transform: uppercase; }
+.sh-snapshot-row.head span { color: #667085; }
+.sh-damaged-list { display: flex; flex-direction: column; gap: 8px; }
+.sh-damaged-item { display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(160px, 1fr); gap: 10px; padding: 10px 12px; border: 1px solid #fed7aa; border-radius: 8px; background: #fff7ed; color: #9a3412; }
+.sh-damaged-item span, .sh-damaged-item em { font-style: normal; font-weight: 800; }
+.sh-damaged-item.head { border-color: #eaecf0; background: #f9fafb; color: #667085; font-size: 12px; font-weight: 900; text-transform: uppercase; }
 .sh-note { margin: 0; padding: 12px; border-radius: 8px; background: #f9fafb; color: #344054; white-space: pre-line; }
 .sh-note.dispute { border: 1px solid #fecaca; background: #fef3f2; color: #991b1b; font-weight: 700; }
 @media (max-width: 768px) {
     .sh-block-head, .sh-sold-row { grid-template-columns: 1fr; }
     .sh-block-head { flex-direction: column; }
+    .sh-shift-info, .sh-compact-row, .sh-compact-row.damaged, .sh-damaged-item { grid-template-columns: 1fr; }
     .sh-report-hero, .sh-report-kpis { grid-template-columns: 1fr; }
     .sh-report-row { grid-template-columns: minmax(0, 1fr) 54px 110px; }
     .sh-grid.two, .sh-equipment-row, .sh-snapshot-row { grid-template-columns: 1fr; }

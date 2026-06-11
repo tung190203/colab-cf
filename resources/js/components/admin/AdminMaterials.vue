@@ -44,6 +44,7 @@ const alertsCount = ref(0);
 const stockLogs = ref([]);
 const logsLoading = ref(false);
 const unitOptions = ['g', 'ml', 'cái', 'chai'];
+const useCustomUnit = ref(false);
 
 const form = ref(defaultForm());
 const importForm = ref(defaultImportForm());
@@ -62,6 +63,13 @@ const visibleMaterials = computed(() => {
     }
 
     return materials.value;
+});
+const availableUnitOptions = computed(() => {
+    return [...new Set([
+        ...unitOptions,
+        ...materials.value.map((item) => item.unit).filter(Boolean),
+        form.value.unit,
+    ].filter(Boolean))];
 });
 
 function defaultForm() {
@@ -174,6 +182,7 @@ async function fetchMaterials() {
 function openCreate() {
     editingMaterial.value = null;
     form.value = defaultForm();
+    useCustomUnit.value = false;
     showForm.value = true;
 }
 
@@ -188,12 +197,25 @@ function openEdit(material) {
         note: material.note || '',
         active: material.active,
     };
+    useCustomUnit.value = !availableUnitOptions.value.includes(material.unit);
     showForm.value = true;
 }
 
 function closeForm() {
     showForm.value = false;
     editingMaterial.value = null;
+    useCustomUnit.value = false;
+}
+
+function handleUnitSelect(value) {
+    if (value === '__custom__') {
+        useCustomUnit.value = true;
+        form.value.unit = '';
+        return;
+    }
+
+    useCustomUnit.value = false;
+    form.value.unit = value;
 }
 
 function openImport(material) {
@@ -544,9 +566,14 @@ onMounted(fetchMaterials);
                     </label>
                     <label class="field">
                         <span>Đơn vị *</span>
-                        <select v-model="form.unit">
-                            <option v-for="unit in unitOptions" :key="unit" :value="unit">{{ unit }}</option>
+                        <select :value="useCustomUnit ? '__custom__' : form.unit" @change="handleUnitSelect($event.target.value)">
+                            <option v-for="unit in availableUnitOptions" :key="unit" :value="unit">{{ unit }}</option>
+                            <option value="__custom__">+ Tạo đơn vị mới</option>
                         </select>
+                    </label>
+                    <label v-if="useCustomUnit" class="field">
+                        <span>Đơn vị mới *</span>
+                        <input v-model.trim="form.unit" type="text" maxlength="30" placeholder="Ví dụ: lon, hộp, kg..." />
                     </label>
                     <label class="field">
                         <span>Tồn kho hiện tại</span>

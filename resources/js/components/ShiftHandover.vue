@@ -115,6 +115,41 @@ function formatNumber(value) {
     return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 3 }).format(Number(value || 0));
 }
 
+function parseNumericInput(value, allowDecimal = false) {
+    const raw = String(value ?? '').trim();
+    if (!allowDecimal) {
+        return Number(raw.replace(/\D/g, '') || 0);
+    }
+
+    const cleaned = raw.replace(/[^\d.,]/g, '');
+    if (!cleaned) return 0;
+
+    if (cleaned.includes(',')) {
+        const [integerPart, decimalPart = ''] = cleaned.split(',');
+        return Number(`${integerPart.replace(/\D/g, '') || 0}.${decimalPart.replace(/\D/g, '')}`) || 0;
+    }
+
+    if (cleaned.includes('.')) {
+        const parts = cleaned.split('.');
+        const lastPart = parts.at(-1) || '';
+        if (lastPart.length === 3 && parts.length > 1) {
+            return Number(parts.join('').replace(/\D/g, '') || 0);
+        }
+        const integerPart = parts.slice(0, -1).join('').replace(/\D/g, '') || '0';
+        return Number(`${integerPart}.${lastPart.replace(/\D/g, '')}`) || 0;
+    }
+
+    return Number(cleaned.replace(/\D/g, '') || 0);
+}
+
+function setNumericField(target, key, event, allowDecimal = false) {
+    target[key] = parseNumericInput(event.target.value, allowDecimal);
+}
+
+function setReceiveCashActual(event) {
+    receiveCashActual.value = parseNumericInput(event.target.value);
+}
+
 function formatPercent(value, total) {
     if (!Number(total || 0)) return '0%';
     return `${Math.round(Number(value || 0) / Number(total) * 100)}%`;
@@ -443,12 +478,24 @@ onMounted(async () => {
                         <h4>1. Tiền bàn giao</h4>
                         <div class="sh-grid two compact">
                             <label class="sh-field">
-                                <span>Tiền bàn giao đầu ca</span>
-                                <input v-model.number="form.opening_cash" type="number" min="0" />
+                                <span>Tiền bàn giao đầu ca <em>VND</em></span>
+                                <input
+                                    :value="formatNumber(form.opening_cash)"
+                                    type="text"
+                                    inputmode="numeric"
+                                    class="numeric-input"
+                                    @input="setNumericField(form, 'opening_cash', $event)"
+                                />
                             </label>
                             <label class="sh-field">
-                                <span>Tiền cuối ca</span>
-                                <input v-model.number="form.cash_actual" type="number" min="0" />
+                                <span>Tiền cuối ca <em>VND</em></span>
+                                <input
+                                    :value="formatNumber(form.cash_actual)"
+                                    type="text"
+                                    inputmode="numeric"
+                                    class="numeric-input"
+                                    @input="setNumericField(form, 'cash_actual', $event)"
+                                />
                             </label>
                         </div>
                     </div>
@@ -471,7 +518,14 @@ onMounted(async () => {
                                         {{ product.name }} · {{ product.category }}
                                     </option>
                                 </select>
-                                <input v-model.number="item.quantity" type="number" min="1" @blur="normalizeSoldProductQuantity(item)" />
+                                <input
+                                    :value="formatNumber(item.quantity)"
+                                    type="text"
+                                    inputmode="numeric"
+                                    class="numeric-input"
+                                    @input="setNumericField(item, 'quantity', $event)"
+                                    @blur="normalizeSoldProductQuantity(item)"
+                                />
                                 <button type="button" class="sh-icon-danger" @click="removeSoldProduct(item)">
                                     <Trash2 :size="17" />
                                 </button>
@@ -509,7 +563,13 @@ onMounted(async () => {
                                         {{ material.name }} · {{ material.unit }}
                                     </option>
                                 </select>
-                                <input v-model.number="item.quantity" type="number" min="0.001" step="0.001" />
+                                <input
+                                    :value="formatNumber(item.quantity)"
+                                    type="text"
+                                    inputmode="decimal"
+                                    class="numeric-input"
+                                    @input="setNumericField(item, 'quantity', $event, true)"
+                                />
                                 <input v-model="item.note" type="text" placeholder="Lý do hỏng" />
                                 <button type="button" class="sh-icon-danger" @click="removeDamagedMaterialRow(item)">
                                     <Trash2 :size="17" />
@@ -609,8 +669,14 @@ onMounted(async () => {
                         <div class="sh-grid two compact">
                             <div class="sh-stats"><span>Tiền nhận từ ca trước</span><strong>{{ formatMoney(selected.cash_actual) }}</strong></div>
                             <label class="sh-stats sh-stats-field">
-                                <span>Tiền thực nhận</span>
-                                <input v-model.number="receiveCashActual" type="number" min="0" />
+                                <span>Tiền thực nhận <em>VND</em></span>
+                                <input
+                                    :value="formatNumber(receiveCashActual)"
+                                    type="text"
+                                    inputmode="numeric"
+                                    class="numeric-input"
+                                    @input="setReceiveCashActual"
+                                />
                             </label>
                         </div>
                         <label v-if="receiveCashDiff !== 0" class="sh-field">
@@ -633,10 +699,11 @@ onMounted(async () => {
                                 <span>Còn lại {{ formatNumber(item.actual) }} {{ item.unit }}</span>
                                 <input
                                     v-if="selected.status === 'pending'"
-                                    v-model.number="receiveMaterialChecks[index].actual_received"
-                                    type="number"
-                                    min="0"
-                                    step="0.001"
+                                    :value="formatNumber(receiveMaterialChecks[index].actual_received)"
+                                    type="text"
+                                    inputmode="decimal"
+                                    class="numeric-input"
+                                    @input="setNumericField(receiveMaterialChecks[index], 'actual_received', $event, true)"
                                 />
                                 <span v-else>{{ formatNumber(receiveMaterialChecks[index]?.actual_received ?? item.actual) }} {{ item.unit }}</span>
                                 <input
@@ -756,7 +823,7 @@ onMounted(async () => {
 .sh-compact-row { display: grid; grid-template-columns: minmax(0, 1fr) 110px 42px; gap: 8px; align-items: center; }
 .sh-compact-row.damaged { grid-template-columns: minmax(0, 1fr) 110px minmax(160px, .8fr) 42px; }
 .sh-compact-row.head { min-height: 32px; padding: 0 4px; color: #667085; font-size: 12px; font-weight: 900; text-transform: uppercase; }
-.sh-compact-row input[type="number"] { text-align: center; }
+.sh-compact-row .numeric-input { text-align: center; }
 .sh-icon-danger { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 40px; border: 1px solid #fecaca; border-radius: 8px; background: #fff; color: #b42318; cursor: pointer; }
 .sh-inline-empty { padding: 14px; margin-top: 12px; border: 1px dashed #d0d5dd; border-radius: 8px; color: #667085; text-align: center; font-weight: 800; }
 .sh-sold-detail { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -767,7 +834,9 @@ onMounted(async () => {
 .sh-field { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
 .sh-field.no-top { margin-top: 0; }
 .sh-field span { color: #344054; font-weight: 800; font-size: 13px; }
+.sh-field span em, .sh-stats span em { margin-left: 6px; color: #667085; font-size: 11px; font-style: normal; font-weight: 900; letter-spacing: .02em; }
 input, textarea, select { width: 100%; min-height: 40px; border: 1px solid #d0d5dd; border-radius: 8px; padding: 8px 10px; font: inherit; outline: 0; }
+.numeric-input { text-align: right; font-variant-numeric: tabular-nums; }
 textarea { resize: vertical; }
 .sh-stats { padding: 12px; background: #f9fafb; border-radius: 8px; }
 .sh-stats span { display: block; color: #667085; font-size: 13px; font-weight: 800; }
@@ -815,7 +884,7 @@ textarea { resize: vertical; }
 .sh-snapshot-row.head { background: #f9fafb; color: #667085; font-size: 12px; font-weight: 900; text-transform: uppercase; }
 .sh-snapshot-row.head span { color: #667085; }
 .sh-snapshot-row input { min-height: 36px; }
-.sh-snapshot-row input[type="number"] { text-align: center; }
+.sh-snapshot-row .numeric-input { text-align: center; }
 .sh-damaged-list { display: flex; flex-direction: column; gap: 8px; }
 .sh-damaged-item { display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(160px, 1fr); gap: 10px; padding: 10px 12px; border: 1px solid #fed7aa; border-radius: 8px; background: #fff7ed; color: #9a3412; }
 .sh-damaged-item span, .sh-damaged-item em { font-style: normal; font-weight: 800; }

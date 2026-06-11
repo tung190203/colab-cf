@@ -176,7 +176,29 @@ class ShiftHandoverController extends Controller
 
     public function dispute(Request $request, ShiftHandover $shiftHandover)
     {
-        $validated = $request->validate(['dispute_note' => 'required|string|max:2000']);
+        $validated = $request->validate([
+            'dispute_note' => 'nullable|string|max:2000',
+            'receive_cash_actual' => 'nullable|integer|min:0',
+            'receive_cash_reason' => 'nullable|string|max:1000',
+            'receive_material_discrepancies' => 'nullable|array',
+            'receive_material_discrepancies.*.material_id' => 'required',
+            'receive_material_discrepancies.*.material_name' => 'required|string|max:255',
+            'receive_material_discrepancies.*.unit' => 'nullable|string|max:50',
+            'receive_material_discrepancies.*.expected' => 'required|numeric',
+            'receive_material_discrepancies.*.actual_received' => 'required|numeric|min:0',
+            'receive_material_discrepancies.*.reason' => 'required|string|max:1000',
+        ]);
+
+        $cashIsDifferent = array_key_exists('receive_cash_actual', $validated)
+            && (int) $validated['receive_cash_actual'] !== (int) $shiftHandover->cash_actual;
+        if ($cashIsDifferent && empty($validated['receive_cash_reason'])) {
+            return response()->json(['message' => 'Vui lòng nhập lý do lệch tiền thực nhận'], 422);
+        }
+
+        $materialDiscrepancies = $validated['receive_material_discrepancies'] ?? [];
+        if (!$cashIsDifferent && empty($materialDiscrepancies) && empty($validated['dispute_note'])) {
+            return response()->json(['message' => 'Vui lòng nhập nội dung sai lệch'], 422);
+        }
 
         $receiveSchedule = $this->receiveScheduleForHandover($shiftHandover);
         if (!$this->userHasScheduleForShift($request->user(), $receiveSchedule['date'], $receiveSchedule['shift_type'])) {
@@ -189,7 +211,10 @@ class ShiftHandoverController extends Controller
             'incoming_employee_id' => $request->user()->id,
             'received_at' => now(),
             'status' => 'disputed',
-            'dispute_note' => $validated['dispute_note'],
+            'dispute_note' => $validated['dispute_note'] ?? 'Có sai lệch khi nhận ca',
+            'receive_cash_actual' => $validated['receive_cash_actual'] ?? null,
+            'receive_cash_reason' => $validated['receive_cash_reason'] ?? null,
+            'receive_material_discrepancies' => $materialDiscrepancies,
             'has_alert' => true,
         ]);
 

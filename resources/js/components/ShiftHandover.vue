@@ -27,6 +27,9 @@ const prepare = ref(null);
 const handovers = ref([]);
 const selected = ref(null);
 const disputeNote = ref('');
+const receiveCashActual = ref('');
+const receiveCashReason = ref('');
+const receiveMaterialChecks = ref([]);
 const exportMonth = ref(new Date().toISOString().slice(0, 7));
 const menuProducts = ref([]);
 const filters = ref({
@@ -77,6 +80,7 @@ const reportCashFlow = computed(() => {
 const cashDiff = computed(() => {
     return Number(form.value.cash_actual || 0) - expectedEndingCash.value;
 });
+const receiveCashDiff = computed(() => Number(receiveCashActual.value || 0) - Number(selected.value?.cash_actual || 0));
 
 function defaultForm() {
     return {
@@ -293,16 +297,44 @@ async function confirmHandover(handover) {
 }
 
 async function disputeHandover(handover) {
-    if (!disputeNote.value.trim()) {
+    const cashIsDifferent = Number(receiveCashActual.value || 0) !== Number(handover.cash_actual || 0);
+    if (cashIsDifferent && !receiveCashReason.value.trim()) {
+        toast.warning('Vui lòng nhập lý do lệch tiền thực nhận');
+        return;
+    }
+
+    const materialDiscrepancies = receiveMaterialChecks.value
+        .filter((item) => Number(item.actual_received || 0) !== Number(item.expected || 0))
+        .map((item) => ({
+            material_id: item.material_id,
+            material_name: item.material_name,
+            unit: item.unit,
+            expected: Number(item.expected || 0),
+            actual_received: Number(item.actual_received || 0),
+            reason: item.reason?.trim() || '',
+        }));
+
+    const missingMaterialReason = materialDiscrepancies.find((item) => !item.reason);
+    if (missingMaterialReason) {
+        toast.warning(`Vui lòng nhập lý do lệch NVL: ${missingMaterialReason.material_name}`);
+        return;
+    }
+
+    if (!cashIsDifferent && materialDiscrepancies.length === 0 && !disputeNote.value.trim()) {
         toast.warning('Vui lòng nhập nội dung sai lệch');
         return;
     }
+
     try {
         await axios.post(`/api/shift-handover/${handover.id}/dispute`, {
             dispute_note: disputeNote.value,
+            receive_cash_actual: Number(receiveCashActual.value || 0),
+            receive_cash_reason: receiveCashReason.value,
+            receive_material_discrepancies: materialDiscrepancies,
         }, { headers: authHeader() });
         toast.success('Đã báo cáo sai lệch');
         disputeNote.value = '';
+        receiveCashReason.value = '';
         selected.value = null;
         await fetchHandovers();
     } catch (error) {
@@ -313,6 +345,20 @@ async function disputeHandover(handover) {
 function openDetail(handover) {
     selected.value = handover;
     disputeNote.value = '';
+    receiveCashActual.value = Number(handover.receive_cash_actual ?? handover.cash_actual ?? 0);
+    receiveCashReason.value = handover.receive_cash_reason || '';
+    receiveMaterialChecks.value = (handover.nvl_snapshot || []).map((item) => {
+        const existing = (handover.receive_material_discrepancies || []).find((row) => Number(row.material_id) === Number(item.material_id));
+
+        return {
+            material_id: item.material_id,
+            material_name: item.material_name,
+            unit: item.unit,
+            expected: Number(item.actual || 0),
+            actual_received: Number(existing?.actual_received ?? item.actual ?? 0),
+            reason: existing?.reason || '',
+        };
+    });
 }
 
 async function exportHandovers() {
@@ -560,9 +606,17 @@ onMounted(async () => {
                         </div>
 
                         <h4>1. Tiền nhận đầu ca</h4>
-                        <div class="sh-grid compact">
+                        <div class="sh-grid two compact">
                             <div class="sh-stats"><span>Tiền nhận từ ca trước</span><strong>{{ formatMoney(selected.cash_actual) }}</strong></div>
+                            <label class="sh-stats sh-stats-field">
+                                <span>Tiền thực nhận</span>
+                                <input v-model.number="receiveCashActual" type="number" min="0" />
+                            </label>
                         </div>
+                        <label v-if="receiveCashDiff !== 0" class="sh-field">
+                            <span>Lý do lệch tiền</span>
+                            <input v-model="receiveCashReason" type="text" placeholder="Ví dụ: thiếu 20.000đ khi kiểm két" />
+                        </label>
 
                         <h4>2.Thống kê NVL</h4>
                         <div class="sh-snapshot">
@@ -570,13 +624,33 @@ onMounted(async () => {
                                 <span>NVL</span>
                                 <span>Đã dùng</span>
                                 <span>Còn lại</span>
+                                <span>Thực nhận</span>
                                 <span>Trạng thái</span>
                             </div>
-                            <div v-for="item in selected.nvl_snapshot" :key="item.material_id" class="sh-snapshot-row" :class="{ warn: item.has_alert }">
+                            <div v-for="(item, index) in selected.nvl_snapshot" :key="item.material_id" class="sh-snapshot-row" :class="{ warn: item.has_alert || Number(receiveMaterialChecks[index]?.actual_received || 0) !== Number(item.actual || 0) }">
                                 <strong>{{ item.material_name }}</strong>
                                 <span>Đã dùng {{ formatNumber(item.required ?? item.diff) }} {{ item.unit }}</span>
                                 <span>Còn lại {{ formatNumber(item.actual) }} {{ item.unit }}</span>
-                                <em>{{ item.has_alert ? (item.reason || 'Đang cảnh báo') : 'Ổn' }}</em>
+                                <input
+                                    v-if="selected.status === 'pending'"
+                                    v-model.number="receiveMaterialChecks[index].actual_received"
+                                    type="number"
+                                    min="0"
+                                    step="0.001"
+                                />
+                                <span v-else>{{ formatNumber(receiveMaterialChecks[index]?.actual_received ?? item.actual) }} {{ item.unit }}</span>
+                                <input
+                                    v-if="selected.status === 'pending' && Number(receiveMaterialChecks[index]?.actual_received || 0) !== Number(item.actual || 0)"
+                                    v-model="receiveMaterialChecks[index].reason"
+                                    type="text"
+                                    placeholder="Lý do lệch"
+                                />
+                                <em v-else>
+                                    {{ Number(receiveMaterialChecks[index]?.actual_received ?? item.actual) !== Number(item.actual || 0)
+                                        ? (receiveMaterialChecks[index]?.reason || 'Có sai lệch')
+                                        : (item.has_alert ? (item.reason || 'Đang cảnh báo') : 'Ổn')
+                                    }}
+                                </em>
                             </div>
                             <div v-if="!selected.nvl_snapshot?.length" class="sh-empty compact">Chưa có dữ liệu NVL</div>
                         </div>
@@ -698,6 +772,8 @@ textarea { resize: vertical; }
 .sh-stats { padding: 12px; background: #f9fafb; border-radius: 8px; }
 .sh-stats span { display: block; color: #667085; font-size: 13px; font-weight: 800; }
 .sh-stats strong { display: block; margin-top: 4px; color: #101828; font-size: 20px; }
+.sh-stats-field { display: block; margin: 0; }
+.sh-stats-field input { margin-top: 8px; background: #fff; }
 .sh-cash-breakdown { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; padding: 10px; border-radius: 8px; background: #f9fafb; color: #667085; font-size: 13px; font-weight: 800; }
 .sh-diff { margin-top: 10px; padding: 10px; border-radius: 8px; background: #f0fdf4; color: #15803d; font-weight: 900; }
 .sh-schedule-warning { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding: 12px 14px; border: 1px solid #fed7aa; border-radius: 8px; background: #fff7ed; color: #9a3412; font-weight: 800; }
@@ -733,11 +809,13 @@ textarea { resize: vertical; }
 .sh-icon-btn { width: 40px; padding: 0; border: 1px solid #d0d5dd; background: #fff; color: #344054; }
 .sh-modal-body { display: flex; flex-direction: column; gap: 12px; }
 .sh-snapshot { display: flex; flex-direction: column; border: 1px solid #eaecf0; border-radius: 8px; overflow: hidden; }
-.sh-snapshot-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px 150px minmax(120px, .8fr); gap: 10px; padding: 10px 12px; border-bottom: 1px solid #eaecf0; }
+.sh-snapshot-row { display: grid; grid-template-columns: minmax(0, 1fr) 140px 140px 130px minmax(150px, .9fr); gap: 10px; padding: 10px 12px; border-bottom: 1px solid #eaecf0; align-items: center; }
 .sh-snapshot-row:last-child { border-bottom: 0; }
 .sh-snapshot-row span, .sh-snapshot-row em { color: #344054; font-style: normal; font-weight: 800; }
 .sh-snapshot-row.head { background: #f9fafb; color: #667085; font-size: 12px; font-weight: 900; text-transform: uppercase; }
 .sh-snapshot-row.head span { color: #667085; }
+.sh-snapshot-row input { min-height: 36px; }
+.sh-snapshot-row input[type="number"] { text-align: center; }
 .sh-damaged-list { display: flex; flex-direction: column; gap: 8px; }
 .sh-damaged-item { display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(160px, 1fr); gap: 10px; padding: 10px 12px; border: 1px solid #fed7aa; border-radius: 8px; background: #fff7ed; color: #9a3412; }
 .sh-damaged-item span, .sh-damaged-item em { font-style: normal; font-weight: 800; }

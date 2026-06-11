@@ -41,7 +41,7 @@ const paginatedBookingList = computed(() => {
 
 const visiblePageItems = computed(() => buildPageItems(currentPage.value, totalPages.value));
 const canServeSelectedBooking = computed(() => {
-  return !stockChecking.value && stockCheck.value?.ok !== false;
+  return !isAwaitingTransferPayment(selectedBooking.value) && !stockChecking.value && stockCheck.value?.ok !== false;
 });
 
 function buildPageItems(current, total) {
@@ -120,6 +120,16 @@ function responseMessage(data, fallback) {
   return data?.message || fallback;
 }
 
+function isAwaitingTransferPayment(booking) {
+  return booking?.status === 'pending' && booking?.payment_method === 'transfer';
+}
+
+function bookingStatusLabel(booking) {
+  if (booking?.status === 'pending' && booking?.payment_method === 'transfer') return 'Chờ thanh toán';
+  if (booking?.status === 'pending' && booking?.payment_method === 'cash') return 'Chờ thu tiền';
+  return 'Chờ phục vụ';
+}
+
 function removeBookingFromList(bookingId) {
   bookingList.value = bookingList.value.filter(b => b.id !== bookingId);
   if ((currentPage.value - 1) * itemsPerPage >= bookingList.value.length && currentPage.value > 1) {
@@ -141,6 +151,11 @@ function formatBookingTime(start, end) {
 
 async function markAsServed(bookingId) {
   if (serving.value || canceling.value) return;
+  if (isAwaitingTransferPayment(selectedBooking.value)) {
+    actionError.value = 'Đơn chuyển khoản đang chờ ảnh xác nhận thanh toán';
+    toast.error(actionError.value);
+    return;
+  }
   if (stockChecking.value) {
     actionError.value = 'Đang kiểm tra tồn kho, vui lòng chờ một chút';
     return;
@@ -243,11 +258,13 @@ onMounted(async () => {
   // Lắng nghe sự kiện real-time
   Echo.channel('bookings')
     .listen('.new-booking-created', (e) => {
-      const exists = bookingList.value.some(b => b.id === e.booking.id);
-      if (!exists) {
+      const index = bookingList.value.findIndex(b => b.id === e.booking.id);
+      if (index === -1) {
           bookingList.value.unshift(e.booking);
           if (currentPage.value !== 1) currentPage.value = 1;
           toast.info(`Đơn mới từ: ${e.booking.full_name}`);
+      } else {
+          bookingList.value[index] = e.booking;
       }
     });
 });
@@ -291,7 +308,7 @@ onUnmounted(() => {
         <div v-for="(booking, index) in paginatedBookingList" :key="booking.id" class="nb-card" @click="openModal(booking)">
           <div class="nb-card-header">
             <span class="nb-id">#{{ (currentPage - 1) * itemsPerPage + index + 1 }}</span>
-            <span class="nb-badge">Chờ phục vụ</span>
+            <span class="nb-badge" :class="{ pending: booking.status === 'pending' }">{{ bookingStatusLabel(booking) }}</span>
           </div>
           
           <div class="nb-card-body">
@@ -401,6 +418,9 @@ onUnmounted(() => {
                             <img :src="'/storage/' + selectedBooking.proof_image" class="img-fluid rounded" />
                         </div>
                     </div>
+                    <div v-if="isAwaitingTransferPayment(selectedBooking)" class="nb-action-warning mt-3">
+                      Đơn chuyển khoản đang chờ khách gửi ảnh xác nhận, chưa thể phục vụ.
+                    </div>
                   </div>
                 </div>
               </div>
@@ -479,6 +499,15 @@ onUnmounted(() => {
     white-space: pre-line;
 }
 
+.nb-action-warning {
+    padding: 12px 14px;
+    border: 1px solid #fed7aa;
+    border-radius: 8px;
+    background: #fff7ed;
+    color: #9a3412;
+    font-weight: 700;
+}
+
 .nb-stock-status {
     margin-bottom: 12px;
     padding: 10px 14px;
@@ -511,6 +540,7 @@ onUnmounted(() => {
 .nb-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .nb-id { font-weight: 800; color: #ddd; font-size: 1.2rem; }
 .nb-badge { background: #fff8e6; color: #b38600; font-size: 0.7rem; font-weight: 700; padding: 4px 10px; border-radius: 100px; }
+.nb-badge.pending { background: #eff6ff; color: #1d4ed8; }
 
 .nb-name { font-weight: 700; color: #1a1a2e; margin: 0 0 10px; font-size: 1.1rem; }
 .nb-package { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }

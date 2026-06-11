@@ -11,6 +11,7 @@ use App\Models\Shift;
 use App\Models\ShiftHandover;
 use App\Models\StaffSchedule;
 use App\Models\User;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -29,6 +30,7 @@ class ShiftHandoverController extends Controller
             ->where('status', 'confirmed');
 
         $posOrders = PosOrder::whereBetween('created_at', [$start, $now]);
+        $shiftReport = $this->buildShiftReport($start, $now);
 
         $bookingRevenueCash = (clone $bookingOrders)->where('payment_method', 'cash')->sum('total_price');
         $bookingRevenueTransfer = (clone $bookingOrders)->whereIn('payment_method', ['transfer', 'momo', 'card'])->sum('total_price');
@@ -48,6 +50,7 @@ class ShiftHandoverController extends Controller
             'total_orders' => $totalOrders,
             'revenue_cash' => (int) $revenueCash,
             'revenue_transfer' => (int) $revenueTransfer,
+            'report' => $shiftReport,
             'materials' => Material::where('active', true)->orderBy('name')->get(),
             'products' => $this->handoverProducts(),
             'staff' => User::whereIn('role', ['staff', 'shift_leader'])->orderBy('name')->get(['id', 'name', 'role']),
@@ -83,6 +86,9 @@ class ShiftHandoverController extends Controller
             $snapshotData = $this->buildNvlSnapshotFromSoldProducts($soldProducts);
             $snapshot = $snapshotData['snapshot'];
             $hasAlert = $snapshotData['has_alert'];
+            $now = Carbon::now('Asia/Ho_Chi_Minh');
+            $lastHandover = ShiftHandover::where('status', 'confirmed')->latest('received_at')->first();
+            $start = $lastHandover?->received_at ?: $now->copy()->startOfDay();
 
             $cashDiff = (int) $validated['cash_actual'] - (int) $validated['cash_theoretical'];
             $hasAlert = $hasAlert || abs($cashDiff) > self::CASH_DIFF_THRESHOLD;
@@ -100,6 +106,7 @@ class ShiftHandoverController extends Controller
                 'revenue_cash' => $validated['revenue_cash'],
                 'revenue_transfer' => $validated['revenue_transfer'],
                 'total_revenue' => $validated['revenue_cash'] + $validated['revenue_transfer'],
+                'report_snapshot' => $this->buildShiftReport($start, $now),
                 'sold_products' => $snapshotData['sold_products'],
                 'nvl_snapshot' => $snapshot,
                 'equipment_checklist' => $validated['equipment_checklist'] ?? [],
@@ -283,6 +290,182 @@ class ShiftHandoverController extends Controller
                 'has_recipe' => in_array($product->id, $recipeProductIds, true),
             ])
             ->values();
+    }
+
+    private function buildShiftReport(Carbon $start, Carbon $end): array
+    {
+        $bookingOrders = Booking::query()
+            ->whereBetween('created_at', [$start, $end])
+            ->where('status', 'confirmed');
+        $posOrders = PosOrder::query()
+            ->whereBetween('created_at', [$start, $end]);
+
+        $cashTotal = (int) (clone $bookingOrders)->where('payment_method', 'cash')->sum('total_price')
+            + (int) (clone $posOrders)->where('payment_method', 'cash')->sum('total_amount');
+        $transferTotal = (int) (clone $bookingOrders)->whereIn('payment_method', ['transfer', 'momo', 'card'])->sum('total_price')
+            + (int) (clone $posOrders)->whereIn('payment_method', ['transfer', 'momo', 'card'])->sum('total_amount');
+        $totalOrders = (clone $bookingOrders)->count() + (clone $posOrders)->count();
+        $totalRevenue = $cashTotal + $transferTotal;
+
+        return [
+            'period_start' => $start->toDateTimeString(),
+            'period_end' => $end->toDateTimeString(),
+            'summary' => [
+                'total_orders' => $totalOrders,
+                'total_revenue' => $totalRevenue,
+                'average_order_value' => $totalOrders > 0 ? (int) round($totalRevenue / $totalOrders) : 0,
+                'cash_total' => $cashTotal,
+                'transfer_total' => $transferTotal,
+            ],
+            'payment_methods' => $this->paymentMethodSummary($start, $end),
+            'sources' => $this->sourceSummary($start, $end),
+            'product_groups' => $this->productGroupSummary($start, $end),
+            'top_products' => $this->topProductSummary($start, $end),
+        ];
+    }
+
+    private function paymentMethodSummary(Carbon $start, Carbon $end): array
+    {
+        $bookingRows = Booking::query()
+            ->select('payment_method', DB::raw('COUNT(*) as orders_count'), DB::raw('SUM(total_price) as revenue'))
+            ->whereBetween('created_at', [$start, $end])
+            ->where('status', 'confirmed')
+            ->groupBy('payment_method')
+            ->get();
+
+        $posRows = PosOrder::query()
+            ->select('payment_method', DB::raw('COUNT(*) as orders_count'), DB::raw('SUM(total_amount) as revenue'))
+            ->whereBetween('created_at', [$start, $end])
+            ->groupBy('payment_method')
+            ->get();
+
+        return $bookingRows
+            ->concat($posRows)
+            ->groupBy('payment_method')
+            ->map(fn ($rows, $method) => [
+                'name' => $this->paymentMethodLabel($method),
+                'orders_count' => (int) $rows->sum('orders_count'),
+                'revenue' => (int) $rows->sum('revenue'),
+            ])
+            ->sortByDesc('revenue')
+            ->values()
+            ->all();
+    }
+
+    private function sourceSummary(Carbon $start, Carbon $end): array
+    {
+        $bookingRows = Booking::query()
+            ->select('mode_booking', DB::raw('COUNT(*) as orders_count'), DB::raw('SUM(total_price) as revenue'))
+            ->whereBetween('created_at', [$start, $end])
+            ->where('status', 'confirmed')
+            ->groupBy('mode_booking')
+            ->get()
+            ->map(fn ($row) => [
+                'name' => $this->bookingModeLabel($row->mode_booking),
+                'orders_count' => (int) $row->orders_count,
+                'revenue' => (int) $row->revenue,
+            ]);
+
+        $posRevenue = (int) PosOrder::query()
+            ->whereBetween('created_at', [$start, $end])
+            ->sum('total_amount');
+        $posOrders = PosOrder::query()
+            ->whereBetween('created_at', [$start, $end])
+            ->count();
+
+        return $bookingRows
+            ->push([
+                'name' => 'POS bán tại quầy',
+                'orders_count' => $posOrders,
+                'revenue' => $posRevenue,
+            ])
+            ->filter(fn ($row) => $row['orders_count'] > 0 || $row['revenue'] > 0)
+            ->sortByDesc('revenue')
+            ->values()
+            ->all();
+    }
+
+    private function productGroupSummary(Carbon $start, Carbon $end): array
+    {
+        return collect()
+            ->merge($this->posItemBaseQuery($start, $end)
+                ->select('extras.category', DB::raw('SUM(pos_order_items.quantity) as quantity'), DB::raw('SUM(pos_order_items.line_total) as revenue'))
+                ->groupBy('extras.category')
+                ->get())
+            ->merge($this->bookingExtraBaseQuery($start, $end)
+                ->select('extras.category', DB::raw('SUM(booking_extras.quantity) as quantity'), DB::raw('SUM(CASE WHEN booking_extras.quantity > booking_extras.free_applied THEN (booking_extras.quantity - booking_extras.free_applied) * extras.price ELSE 0 END) as revenue'))
+                ->groupBy('extras.category')
+                ->get())
+            ->groupBy('category')
+            ->map(fn ($rows, $category) => [
+                'name' => $category ?: 'Chưa phân nhóm',
+                'quantity' => (int) $rows->sum('quantity'),
+                'revenue' => (int) $rows->sum('revenue'),
+            ])
+            ->sortByDesc('revenue')
+            ->values()
+            ->all();
+    }
+
+    private function topProductSummary(Carbon $start, Carbon $end): array
+    {
+        return collect()
+            ->merge($this->posItemBaseQuery($start, $end)
+                ->select('pos_order_items.product_id', 'pos_order_items.product_name as name', 'extras.category', DB::raw('SUM(pos_order_items.quantity) as quantity'), DB::raw('SUM(pos_order_items.line_total) as revenue'))
+                ->groupBy('pos_order_items.product_id', 'pos_order_items.product_name', 'extras.category')
+                ->get())
+            ->merge($this->bookingExtraBaseQuery($start, $end)
+                ->select('booking_extras.extra_id as product_id', 'extras.name', 'extras.category', DB::raw('SUM(booking_extras.quantity) as quantity'), DB::raw('SUM(CASE WHEN booking_extras.quantity > booking_extras.free_applied THEN (booking_extras.quantity - booking_extras.free_applied) * extras.price ELSE 0 END) as revenue'))
+                ->groupBy('booking_extras.extra_id', 'extras.name', 'extras.category')
+                ->get())
+            ->groupBy('product_id')
+            ->map(fn ($rows) => [
+                'name' => $rows->first()->name,
+                'category' => $rows->first()->category,
+                'quantity' => (int) $rows->sum('quantity'),
+                'revenue' => (int) $rows->sum('revenue'),
+            ])
+            ->sortByDesc('revenue')
+            ->take(8)
+            ->values()
+            ->all();
+    }
+
+    private function posItemBaseQuery(Carbon $start, Carbon $end): Builder
+    {
+        return DB::table('pos_order_items')
+            ->join('pos_orders', 'pos_order_items.pos_order_id', '=', 'pos_orders.id')
+            ->leftJoin('extras', 'pos_order_items.product_id', '=', 'extras.id')
+            ->whereBetween('pos_orders.created_at', [$start, $end]);
+    }
+
+    private function bookingExtraBaseQuery(Carbon $start, Carbon $end): Builder
+    {
+        return DB::table('booking_extras')
+            ->join('bookings', 'booking_extras.booking_id', '=', 'bookings.id')
+            ->join('extras', 'booking_extras.extra_id', '=', 'extras.id')
+            ->whereBetween('bookings.created_at', [$start, $end])
+            ->where('bookings.status', 'confirmed');
+    }
+
+    private function paymentMethodLabel(?string $method): string
+    {
+        return [
+            'cash' => 'Tiền mặt',
+            'transfer' => 'Chuyển khoản',
+            'momo' => 'MoMo',
+            'card' => 'Thẻ',
+            'none' => 'Chưa thanh toán',
+        ][$method] ?? ($method ?: 'Không rõ');
+    }
+
+    private function bookingModeLabel(?string $mode): string
+    {
+        return [
+            'seat' => 'Đặt chỗ',
+            'room' => 'Phòng họp',
+            'order' => 'Đơn online',
+        ][$mode] ?? ($mode ?: 'Không rõ');
     }
 
     private function normalizeSoldProducts(array $soldProducts): array

@@ -123,7 +123,7 @@ class BookingController extends Controller
                 $booking->extras()->attach($serviceQuantities);
             }
 
-            if (!in_array($validated['payment_method'], ['momo', 'transfer'])) {
+            if ($validated['payment_method'] !== 'momo') {
                 $booking->load('package', 'table', 'extras');
                 $today = Carbon::today();
                 if (Carbon::parse($booking->start_time)->isSameDay($today)) {
@@ -608,15 +608,13 @@ class BookingController extends Controller
     {
         $now = Carbon::now();
 
-        // Staff thấy các đơn:
-        // 1. Đã confirmed (Momo/Chuyển khoản đã duyệt)
-        // 2. Pending nhưng thanh toán bằng Tiền mặt (để staff thu tiền)
+        // Staff thấy các đơn đã sẵn sàng hoặc đang chờ thu/xác nhận thanh toán.
         $todayBookings = Booking::with('package', 'table', 'extras')
             ->where(function($q) {
                 $q->where('status', 'confirmed')
                   ->orWhere(function($q2) {
                       $q2->where('status', 'pending')
-                         ->where('payment_method', 'cash');
+                         ->whereIn('payment_method', ['cash', 'transfer']);
                   });
             })
             ->where('is_served', false)

@@ -200,7 +200,7 @@ const closeModal = () => {
 };
 
 const viewEvent = (slug) => {
-  window.open(`/e/${slug}`, '_blank');
+  window.open(`/events/${slug}`, '_blank');
 };
 
 const generateSlug = () => {

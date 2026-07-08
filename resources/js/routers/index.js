@@ -25,6 +25,7 @@ import AdminAuditLogs from '../components/admin/AdminAuditLogs.vue';
 import AdminPenaltyRules from '../components/admin/AdminPenaltyRules.vue';
 import AdminMaterials from '../components/admin/AdminMaterials.vue';
 import AdminRecipes from '../components/admin/AdminRecipes.vue';
+import EventManagement from '../components/admin/EventManagement.vue';
 import ShiftHandover from '../components/ShiftHandover.vue';
 
 // Staff components
@@ -62,6 +63,7 @@ const routes = [
   { path: '/admin/recipes', component: AdminRecipes, name: 'AdminRecipes', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
   { path: '/admin/shift-handovers', component: ShiftHandover, name: 'AdminShiftHandovers', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
   { path: '/admin/booking-setup', component: AdminBookingSetup, name: 'AdminBookingSetup', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
+  { path: '/admin/events', component: EventManagement, name: 'AdminEvents', meta: { requiresAuth: true, roles: ['admin'] } },
 
   // ─── Shared admin+staff routes ───────────────────────────────────────────────
   { path: '/staff', redirect: '/staff/dashboard' },

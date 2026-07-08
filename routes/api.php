@@ -58,6 +58,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/admin/attendance', [AdminController::class, 'saveAttendance']);
         Route::get('/admin/audit-logs', [AdminController::class, 'getAuditLogs'])->middleware('role:admin');
 
+        // Event Management
+        Route::post('/admin/events/upload-zip', [\App\Http\Controllers\HR\EventController::class, 'uploadZip'])->middleware('role:admin');
+        Route::get('/admin/events', [\App\Http\Controllers\HR\EventController::class, 'index'])->middleware('role:admin');
+        Route::post('/admin/events', [\App\Http\Controllers\HR\EventController::class, 'store'])->middleware('role:admin');
+        Route::get('/admin/events/{id}', [\App\Http\Controllers\HR\EventController::class, 'show'])->middleware('role:admin');
+        Route::put('/admin/events/{id}', [\App\Http\Controllers\HR\EventController::class, 'update'])->middleware('role:admin');
+        Route::delete('/admin/events/{id}', [\App\Http\Controllers\HR\EventController::class, 'destroy'])->middleware('role:admin');
+
         // Menu Management
         Route::get('/admin/menu', [MenuController::class, 'index']);
         Route::post('/admin/menu', [MenuController::class, 'store']);

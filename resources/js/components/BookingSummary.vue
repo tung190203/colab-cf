@@ -19,7 +19,12 @@ const {
   end_time,
   name,
   phone,
-  currentBookingId
+  currentBookingId,
+  selectedFloor,
+  floor2CustomPrice,
+  floor2BookingMode,
+  floor2SeatCount,
+  floor2SeatsSelected
 } = useBooking();
 
 const note = ref('');
@@ -49,7 +54,7 @@ async function pay(method) {
     }
 
     const payload = {
-      package_id: selectedPackage.value.id,
+      package_id: selectedPackage.value?.id || 1,
       table: selectedTable.value,
       start_time: toVietnamDatetime(start_time.value),
       end_time: toVietnamDatetime(end_time.value),
@@ -62,11 +67,17 @@ async function pay(method) {
       customer_name: name.value,
       customer_phone: phone.value,
       mode_booking:
-        selectedPackage.value.category === 'ship'
-          ? 'order'
-          : ['vip_room', 'meeting_room'].includes(selectedTableCategory.value)
-            ? 'room'
-            : 'seat',
+        selectedFloor.value === 2
+          ? (floor2BookingMode.value || 'seat')
+          : (selectedPackage.value?.category === 'ship'
+            ? 'order'
+            : ['vip_room', 'meeting_room'].includes(selectedTableCategory.value)
+              ? 'room'
+              : 'seat'),
+      seat_count: selectedFloor.value === 2 ? (floor2SeatCount.value || 1) : 1,
+      seat_names: selectedFloor.value === 2 && floor2BookingMode.value === 'seat' && floor2SeatsSelected.value?.length
+        ? floor2SeatsSelected.value.map(s => String(s).padStart(2, '0')).join(', ')
+        : null,
 
       note: note.value || null,
       address: address.value || null,
@@ -74,7 +85,10 @@ async function pay(method) {
 
     const res = await fetch('/api/booking', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
       body: JSON.stringify(payload),
     });
 
@@ -150,12 +164,16 @@ function callHotline() {
           
           <div class="summary-list">
             <div class="summary-item">
-              <span class="label">Gói</span>
-              <span class="value fw-bold">{{ selectedPackage?.name ?? '-' }}</span>
+              <span class="label">Hình thức / Gói</span>
+              <span class="value fw-bold">
+                {{ selectedFloor === 2 ? ('Tầng 2 - ' + (floor2BookingMode === 'room' ? 'Thuê trọn phòng (300k/3h)' : ('Thuê ' + floor2SeatCount + ' chỗ (50k/chỗ/ngày)'))) : (selectedPackage?.name ?? '-') }}
+              </span>
             </div>
             <div class="summary-item">
               <span class="label">Vị trí ngồi</span>
-              <span class="value fw-bold">{{ selectedTable ?? '-' }}</span>
+              <span class="value fw-bold">
+                {{ selectedTable ? (selectedFloor === 2 ? ('Tầng 2 · ' + selectedTable + (floor2BookingMode === 'seat' && floor2SeatsSelected?.length ? ' · Ghế: ' + floor2SeatsSelected.join(', ') : '')) : selectedTable) : '-' }}
+              </span>
             </div>
             <div class="summary-item">
               <span class="label">Ngày</span>
@@ -185,8 +203,8 @@ function callHotline() {
             </div>
             
             <div class="summary-item highlight mt-3 border-top pt-3">
-              <span class="label">Giá gói</span>
-              <span class="value">{{ usesExtraOnlyPricing ? 'Không tính khi có gọi món' : (formatVND(selectedPackage?.price) ?? '-') }}</span>
+              <span class="label">{{ selectedFloor === 2 ? 'Giá phòng / chỗ Tầng 2' : 'Giá gói' }}</span>
+              <span class="value">{{ selectedFloor === 2 ? formatVND(floor2CustomPrice) : (usesExtraOnlyPricing ? 'Không tính khi có gọi món' : (formatVND(selectedPackage?.price) ?? '-')) }}</span>
             </div>
 
             <div v-if="extras.length" class="extras-list mt-2">

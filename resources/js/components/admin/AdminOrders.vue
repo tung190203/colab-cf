@@ -273,7 +273,11 @@ function getInitials(name) {
                         <div class="mb-3 p-3 bg-white rounded-3 shadow-sm">
                             <h6 class="text-secondary fw-bold mb-3">Chi tiết Dịch vụ</h6>
                             <p class="mb-1"><strong>Gói:</strong> <span class="text-success fw-bold">{{ selectedBooking.package?.name }}</span></p>
-                            <p class="mb-1"><strong>Bàn:</strong> {{ selectedBooking.table?.code || 'Không có' }}</p>
+                            <p class="mb-1">
+                                <strong>Bàn:</strong> 
+                                {{ selectedBooking.table?.code || 'Không có' }}
+                                <span v-if="selectedBooking.seat_names" class="text-primary fw-bold"> (Ghế: {{ selectedBooking.seat_names }})</span>
+                            </p>
                             <p class="mb-1"><strong>Giờ vào:</strong> {{ formatTime(selectedBooking.start_time) }}</p>
                         </div>
 

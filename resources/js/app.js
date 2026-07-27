@@ -5,8 +5,11 @@ import router from './routers/index.js';
 import Vue3Toastify from 'vue3-toastify'
 import 'vue3-toastify/dist/index.css'
 
+import VueKonva from 'vue-konva';
+
 const app = createApp(App);
 app.use(router);
+app.use(VueKonva);
 app.use(Vue3Toastify, {
     position: 'top-right',
     autoClose: 3000,

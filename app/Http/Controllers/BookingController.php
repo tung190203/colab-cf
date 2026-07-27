@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Events\NewBookingCreated;
 use App\Models\Booking;
 use App\Models\Table;
+use App\Models\FloorLayout;
 use App\Models\Package;
 use App\Models\Extra;
 use App\Models\User;
@@ -22,7 +23,7 @@ class BookingController extends Controller
     public function store(Request $request, MomoService $momo)
     {
         $validated = $request->validate([
-            'package_id' => 'required|exists:packages,id,is_active,1',
+            'package_id' => 'nullable|exists:packages,id,is_active,1',
             'table' => 'nullable|exists:tables,code,is_active,1',
             'start_time' => 'nullable|date',
             'end_time' => 'required|date|after:now',
@@ -36,6 +37,8 @@ class BookingController extends Controller
             'mode_booking' => 'required|in:seat,room,order',
             'note' => 'nullable|string|max:500',
             'address' => 'nullable|string|max:255',
+            'seat_count' => 'nullable|integer|min:1',
+            'seat_names' => 'nullable|string|max:255',
         ]);
 
         $startTime = isset($validated['start_time'])
@@ -43,32 +46,41 @@ class BookingController extends Controller
             : now();
 
         $tableId = null;
+        $selectedTable = null;
         if (!empty($validated['table'])) {
             $selectedTable = Table::where('code', $validated['table'])
                 ->where('is_active', true)
                 ->first();
-            $tableId = $selectedTable->id;
+            if ($selectedTable) {
+                $tableId = $selectedTable->id;
 
-            // Kiểm tra trùng lịch
-            $conflict = Booking::where('table_id', $tableId)
-                ->where('is_served', 0)
-                ->whereIn('status', ['confirmed', 'pending'])
-                ->where(function ($query) use ($startTime, $validated) {
-                    $query->whereBetween('start_time', [$startTime, $validated['end_time']])
-                        ->orWhereBetween('end_time', [$startTime, $validated['end_time']])
-                        ->orWhere(function ($q) use ($startTime, $validated) {
-                            $q->where('start_time', '<=', $startTime)
-                                ->where('end_time', '>=', $validated['end_time']);
-                        });
-                })->exists();
+                // Kiểm tra trùng lịch
+                $conflict = Booking::where('table_id', $tableId)
+                    ->where('is_served', 0)
+                    ->whereIn('status', ['confirmed', 'pending'])
+                    ->where(function ($query) use ($startTime, $validated) {
+                        $query->whereBetween('start_time', [$startTime, $validated['end_time']])
+                            ->orWhereBetween('end_time', [$startTime, $validated['end_time']])
+                            ->orWhere(function ($q) use ($startTime, $validated) {
+                                $q->where('start_time', '<=', $startTime)
+                                    ->where('end_time', '>=', $validated['end_time']);
+                            });
+                    })->exists();
 
-            if ($conflict) {
-                return response()->json(['message' => 'Bàn đã được đặt trong khoảng thời gian này'], 422);
+                if ($conflict && $validated['mode_booking'] === 'room') {
+                    return response()->json(['message' => 'Phòng đã được đặt trong khoảng thời gian này'], 422);
+                }
             }
         }
 
+        // Auto fallback for package_id if not provided
+        $packageId = $validated['package_id'] ?? null;
+        if (!$packageId) {
+            $packageId = Package::where('is_active', true)->value('id') ?? 1;
+        }
+
         // Tính tổng tiền
-        $package = Package::where('is_active', true)->findOrFail($validated['package_id']);
+        $package = Package::find($packageId);
         $hasExtras = !empty($validated['extras']);
         $selectedExtras = collect($validated['extras'] ?? [])
             ->map(fn($srv) => Extra::find($srv['id']))
@@ -76,7 +88,24 @@ class BookingController extends Controller
         $hasPaidExtras = $selectedExtras->contains(fn($extra) => (int) $extra->price > 0);
         $hasZeroPriceExtras = $selectedExtras->contains(fn($extra) => (int) $extra->price === 0);
         $useExtraOnlyPricing = $hasPaidExtras && !$hasZeroPriceExtras;
-        $total = $useExtraOnlyPricing ? 0 : $package->price;
+        $total = $useExtraOnlyPricing ? 0 : ($package ? $package->price : 0);
+
+        // Floor 2 Pricing logic override
+        if ($selectedTable && ($selectedTable->floor == 2 || in_array($selectedTable->category, ['meeting_room', 'vip_room', 'box_room']))) {
+            $start = Carbon::parse($startTime);
+            $end = Carbon::parse($validated['end_time']);
+            if ($validated['mode_booking'] === 'seat') {
+                $seatCount = (int) ($request->input('seat_count') ?? 1);
+                $seatPrice = $selectedTable->seat_price ?: 50000;
+                $days = max(1, (int) ceil($start->diffInHours($end) / 24));
+                $total = $seatPrice * $seatCount * $days;
+            } else if ($validated['mode_booking'] === 'room') {
+                $blockPrice = $selectedTable->block_price ?: 300000;
+                $diffMinutes = max(1, $start->diffInMinutes($end));
+                $blocks = (int) ceil($diffMinutes / 180);
+                $total = $blockPrice * $blocks;
+            }
+        }
         $serviceQuantities = [];
 
         if ($hasExtras) {
@@ -115,6 +144,7 @@ class BookingController extends Controller
                 'phone' => $validated['customer_phone'],
                 'is_served' => 0,
                 'mode_booking' => $validated['mode_booking'],
+                'seat_names' => $validated['seat_names'] ?? null,
                 'note' => $validated['note'] ?? null,
                 'address' => $validated['address'] ?? null,
             ]);
@@ -332,11 +362,17 @@ class BookingController extends Controller
                     ->whereDate('start_time', today())
                     ->where('mode_booking', 'seat')
                     ->count();
+                $hasRoomBooking = $this->activeBookingQuery()
+                    ->where('table_id', $item->id)
+                    ->whereDate('start_time', today())
+                    ->where('mode_booking', 'room')
+                    ->exists();
                 return [
                     'id' => $item->id,
                     'code' => $item->code,
                     'total_seating' => $item->total_seating,
                     'booked_seats' => $bookedSeats,
+                    'has_room_booking' => $hasRoomBooking,
                 ];
             })->values();
         });
@@ -868,5 +904,137 @@ class BookingController extends Controller
         return Booking::query()
             ->where('is_served', false)
             ->whereIn('status', ['pending', 'confirmed']);
+    }
+
+    public function getFloorLayout(Request $request)
+    {
+        $floor = (int) $request->query('floor', 2);
+        $layout = FloorLayout::where('floor', $floor)->first();
+
+        // Standardized room configuration matching user floorplan image
+        $standardRooms = [
+            [
+                'id' => 'room_d',
+                'code' => 'D',
+                'name' => 'Phòng D (8 chỗ)',
+                'category' => 'meeting_room',
+                'x' => 50,
+                'y' => 40,
+                'width' => 270,
+                'height' => 250,
+                'rotation' => 0,
+                'total_seating' => 8,
+                'seat_price' => 50000,
+                'block_price' => 300000,
+                'color' => '#1e293b',
+            ],
+            [
+                'id' => 'room_box',
+                'code' => 'BOX',
+                'name' => 'Box kính (2 chỗ)',
+                'category' => 'box_room',
+                'x' => 140,
+                'y' => 290,
+                'width' => 180,
+                'height' => 240,
+                'rotation' => 0,
+                'total_seating' => 2,
+                'seat_price' => 50000,
+                'block_price' => 300000,
+                'color' => '#1e293b',
+            ],
+            [
+                'id' => 'room_c',
+                'code' => 'C',
+                'name' => 'Phòng C (8 chỗ)',
+                'category' => 'meeting_room',
+                'x' => 320,
+                'y' => 290,
+                'width' => 270,
+                'height' => 250,
+                'rotation' => 0,
+                'total_seating' => 8,
+                'seat_price' => 50000,
+                'block_price' => 300000,
+                'color' => '#1e293b',
+            ],
+        ];
+
+        $defaultData = [
+            'floor' => $floor,
+            'name' => "Tầng {$floor}",
+            'gridSize' => 20,
+            'canvasWidth' => 700,
+            'canvasHeight' => 580,
+            'rooms' => $standardRooms
+        ];
+
+        if (!$layout) {
+            $layout = FloorLayout::create([
+                'floor' => $floor,
+                'name' => "Tầng {$floor}",
+                'layout_json' => $defaultData,
+            ]);
+
+            // Ensure DB tables exist for rooms D, Box, C on first create
+            foreach ($standardRooms as $room) {
+                Table::updateOrCreate(
+                    ['code' => $room['code']],
+                    [
+                        'category' => $room['category'],
+                        'total_seating' => $room['total_seating'],
+                        'floor' => $floor,
+                        'seat_price' => $room['seat_price'],
+                        'block_price' => $room['block_price'],
+                        'status' => 'free',
+                        'is_active' => true,
+                    ]
+                );
+            }
+        }
+
+        return response()->json($layout);
+    }
+
+    public function saveFloorLayout(Request $request)
+    {
+        $validated = $request->validate([
+            'floor' => 'required|integer',
+            'layout_json' => 'required|array',
+        ]);
+
+        $floor = $validated['floor'];
+        $layoutData = $validated['layout_json'];
+
+        $layout = FloorLayout::updateOrCreate(
+            ['floor' => $floor],
+            [
+                'name' => $layoutData['name'] ?? "Tầng {$floor}",
+                'layout_json' => $layoutData,
+            ]
+        );
+
+        if (!empty($layoutData['rooms']) && is_array($layoutData['rooms'])) {
+            foreach ($layoutData['rooms'] as $room) {
+                if (empty($room['code'])) continue;
+                Table::updateOrCreate(
+                    ['code' => $room['code']],
+                    [
+                        'category' => $room['category'] ?? 'meeting_room',
+                        'total_seating' => (int) ($room['total_seating'] ?? 1),
+                        'floor' => $floor,
+                        'seat_price' => (int) ($room['seat_price'] ?? 50000),
+                        'block_price' => (int) ($room['block_price'] ?? 300000),
+                        'status' => 'free',
+                        'is_active' => true,
+                    ]
+                );
+            }
+        }
+
+        return response()->json([
+            'message' => 'Lưu sơ đồ tầng thành công',
+            'layout' => $layout,
+        ]);
     }
 }

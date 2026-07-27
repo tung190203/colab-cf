@@ -19,6 +19,7 @@ import AdminPayroll from '../components/admin/AdminPayroll.vue';
 import AdminOrders from '../components/admin/AdminOrders.vue';
 import AdminMenu from '../components/admin/AdminMenu.vue';
 import AdminBookingSetup from '../components/admin/AdminBookingSetup.vue';
+import AdminFloorDesigner from '../components/admin/AdminFloorDesigner.vue';
 import AdminAttendance from '../components/admin/AdminAttendance.vue';
 import AdminCustomerStats from '../components/admin/AdminCustomerStats.vue';
 import AdminAuditLogs from '../components/admin/AdminAuditLogs.vue';
@@ -62,6 +63,7 @@ const routes = [
   { path: '/admin/materials', component: AdminMaterials, name: 'AdminMaterials', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
   { path: '/admin/recipes', component: AdminRecipes, name: 'AdminRecipes', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
   { path: '/admin/shift-handovers', component: ShiftHandover, name: 'AdminShiftHandovers', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
+  { path: '/admin/floor-designer', component: AdminFloorDesigner, name: 'AdminFloorDesigner', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
   { path: '/admin/booking-setup', component: AdminBookingSetup, name: 'AdminBookingSetup', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
   { path: '/admin/events', component: EventManagement, name: 'AdminEvents', meta: { requiresAuth: true, roles: ['admin'] } },
 

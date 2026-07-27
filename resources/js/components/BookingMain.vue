@@ -5,6 +5,8 @@ import { useBooking } from '../composables/useBooking';
 import { toast } from 'vue3-toastify';
 import axios from 'axios';
 
+import Floor2BookingCanvas from './Floor2BookingCanvas.vue';
+
 const router = useRouter();
 const {
   packages,
@@ -27,8 +29,48 @@ const {
   start_time,
   end_time,
   total,
-  param
+  param,
+  floor2CustomPrice,
+  selectedFloor,
+  floor2BookingMode,
+  floor2SeatCount,
+  floor2SeatsSelected
 } = useBooking();
+
+const floor2SelectionData = ref(null);
+
+function handleFloor2RoomSelect(data) {
+  floor2SelectionData.value = data;
+  selectedTable.value = data.code;
+  floor2BookingMode.value = data.bookingMode || 'seat';
+  floor2SeatCount.value = data.seatCount || (data.seats ? data.seats.length : 1);
+  floor2SeatsSelected.value = data.seats || [];
+  
+  if (data.bookingMode === 'room') {
+    floor2CustomPrice.value = data.blockPrice || 300000;
+  } else {
+    floor2CustomPrice.value = (data.seatPrice || 50000) * floor2SeatCount.value;
+  }
+
+  // Set default time for Floor 2
+  if (!start_time.value) {
+    const now = new Date();
+    start_time.value = formatVietnamDatetime(now);
+  }
+  
+  const start = new Date(start_time.value);
+  if (data.bookingMode === 'room') {
+    // 3 hours from start_time
+    const end = new Date(start.getTime() + 3 * 60 * 60 * 1000);
+    end_time.value = formatVietnamDatetime(end);
+  } else {
+    // 00:00 of the next day
+    const nextDay = new Date(start);
+    nextDay.setDate(start.getDate() + 1);
+    nextDay.setHours(0, 0, 0, 0);
+    end_time.value = formatVietnamDatetime(nextDay);
+  }
+}
 
 // State cho Categories của Đồ uống
 const activeServiceCategory = ref('all');
@@ -105,6 +147,14 @@ function selectPackageWithBonus(pkg) {
     const start = new Date(start_time.value);
     const end = new Date(start.getTime() + pkg.duration * 60000);
     end_time.value = formatVietnamDatetime(end);
+  }
+}
+
+function switchFloor(floor) {
+  selectedFloor.value = floor;
+  if (floor === 2) {
+    // Floor 2 has no package → no free drinks
+    sessionStorage.setItem('freeDrinks', '0');
   }
 }
 
@@ -210,7 +260,7 @@ function getFreeDrinksCount() {
 }
 
 function goSummary() {
-  if (!selectedPackage.value) {
+  if (selectedFloor.value === 1 && !selectedPackage.value) {
     toast.error('Vui lòng chọn gói làm việc');
     return;
   }
@@ -221,26 +271,30 @@ function goSummary() {
   router.push('/summary');
 }
 
-// Gộp nhóm Indoor và Outdoor thành "Khu mở"
+// Gộp nhóm Indoor và Outdoor thành "Khu mở" (Chỉ dành cho Tầng 1)
 const displayTables = computed(() => {
   const allTables = filteredTables.value;
   const result = {};
   
-  // Gộp indoor và outdoor
+  // Gộp indoor, outdoor, private thuộc Tầng 1
   const openAreaTables = [
-    ...(allTables.indoor || []).map((t) => ({ ...t, category: 'indoor' })),
-    ...(allTables.outdoor || []).map((t) => ({ ...t, category: 'outdoor' })),
-    ...(allTables.private || []).map((t) => ({ ...t, category: 'private' }))
+    ...(allTables.indoor || []).filter(t => Number(t.floor || 1) === 1).map((t) => ({ ...t, category: 'indoor' })),
+    ...(allTables.outdoor || []).filter(t => Number(t.floor || 1) === 1).map((t) => ({ ...t, category: 'outdoor' })),
+    ...(allTables.private || []).filter(t => Number(t.floor || 1) === 1).map((t) => ({ ...t, category: 'private' }))
   ];
   
   if (openAreaTables.length > 0) {
     result['open_area'] = openAreaTables;
   }
   
-  // Các nhóm còn lại giữ nguyên
+  // Các nhóm còn lại (Loại bỏ các danh mục Tầng 2 như meeting_room, vip_room, box_room, other_services)
+  const floor2Categories = ['box_room', 'meeting_room', 'vip_room', 'other_services', 'box'];
   Object.keys(allTables).forEach(cat => {
-    if (cat !== 'indoor' && cat !== 'outdoor' && cat !== 'private') {
-      result[cat] = allTables[cat].map((t) => ({ ...t, category: cat }));
+    if (cat !== 'indoor' && cat !== 'outdoor' && cat !== 'private' && !floor2Categories.includes(cat)) {
+      const floor1Only = allTables[cat].filter(t => Number(t.floor || 1) === 1);
+      if (floor1Only.length > 0) {
+        result[cat] = floor1Only.map((t) => ({ ...t, category: cat }));
+      }
     }
   });
   
@@ -266,10 +320,20 @@ const displayTables = computed(() => {
 
     <div class="container pb-5">
       <!-- SECTION 1: GÓI LÀM VIỆC -->
-      <section id="section-packages" class="card section-card mb-4">
+      <section id="section-packages" class="card section-card mb-4" :class="{ 'opacity-75': selectedFloor === 2 }">
         <div class="card-body p-4">
-          <div class="section-header mb-4">
-            <h3 class="section-title">GÓI LÀM VIỆC</h3>
+          <div class="section-header d-flex justify-content-between align-items-center mb-4">
+            <h3 class="section-title mb-0">GÓI LÀM VIỆC (DÀNH CHO TẦNG 1)</h3>
+            <span v-if="selectedFloor === 2" class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-3 py-2 rounded-pill font-weight-bold">
+              Tầng 2 dùng đơn giá riêng (Không cần chọn gói)
+            </span>
+          </div>
+
+          <div v-if="selectedFloor === 2" class="alert alert-success border-0 bg-emerald-50 text-dark p-3 mb-4 rounded-3 d-flex align-items-center gap-2">
+            <span class="fs-5 text-success">✦</span>
+            <div class="small font-weight-bold">
+              Bạn đang chọn Tầng 2. Hệ thống tính tiền theo chỗ/phòng riêng (50k/chỗ/ngày hoặc 300k/gói 3h), KHÔNG cộng tiền các gói làm việc ở đây.
+            </div>
           </div>
           
           <div class="row g-3">
@@ -310,39 +374,71 @@ const displayTables = computed(() => {
       <!-- SECTION 2: VỊ TRÍ NGỒI -->
       <section id="section-tables" class="card section-card mb-4">
         <div class="card-body p-4">
-          <div class="section-header mb-4">
-            <h3 class="section-title">VỊ TRÍ NGỒI</h3>
+          <div class="section-header d-flex justify-content-between align-items-center mb-4">
+            <h3 class="section-title mb-0">VỊ TRÍ NGỒI</h3>
+
+            <!-- Floor selector pills -->
+            <div class="d-flex p-1 bg-light rounded-pill border">
+              <button
+                class="btn btn-sm rounded-pill font-weight-bold px-3 py-1"
+                :class="selectedFloor === 1 ? 'btn-dark text-white' : 'btn-link text-muted text-decoration-none'"
+                @click="switchFloor(1)"
+              >
+                Tầng 1 (Khu mở)
+              </button>
+              <button
+                class="btn btn-sm rounded-pill font-weight-bold px-3 py-1"
+                :class="selectedFloor === 2 ? 'btn-indigo text-white bg-primary' : 'btn-link text-muted text-decoration-none'"
+                @click="switchFloor(2)"
+              >
+                Tầng 2 (Phòng họp/VIP/Box)
+              </button>
+            </div>
           </div>
 
-          <div v-for="(groupTables, category) in displayTables" :key="category" class="mb-4">
-            <div class="d-flex align-items-center mb-3 gap-2">
-              <h5 class="area-name mb-0">{{ formatCategoryName(category) }}</h5>
-              <span v-if="category === 'meeting_room'" class="badge-lock">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-lock-fill" viewBox="0 0 16 16"><path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/></svg>
-                240 phút+
-              </span>
-              <span v-if="category === 'vip_room'" class="badge-lock">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-lock-fill" viewBox="0 0 16 16"><path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/></svg>
-                480 phút+
-              </span>
-            </div>
+          <!-- TẦNG 1 VIEW -->
+          <template v-if="selectedFloor === 1">
+            <div v-for="(groupTables, category) in displayTables" :key="category" class="mb-4">
+              <div class="d-flex align-items-center mb-3 gap-2">
+                <h5 class="area-name mb-0">{{ formatCategoryName(category) }}</h5>
+                <span v-if="category === 'meeting_room'" class="badge-lock">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-lock-fill" viewBox="0 0 16 16"><path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/></svg>
+                  240 phút+
+                </span>
+                <span v-if="category === 'vip_room'" class="badge-lock">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" class="bi bi-lock-fill" viewBox="0 0 16 16"><path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/></svg>
+                  480 phút+
+                </span>
+              </div>
 
-            <div class="seat-grid">
-              <div 
-                v-for="t in groupTables" 
-                :key="t.code" 
-                class="seat-item"
-                :class="{ 
-                  'active': selectedTable === t.code, 
-                  'booked': t.booked_seats >= t.total_seating,
-                  'locked': isTableLocked(category)
-                }"
-                @click="handleTableClick(t, category)"
-              >
-                {{ t.code }}
+              <div class="seat-grid">
+                <div 
+                  v-for="t in groupTables" 
+                  :key="t.code" 
+                  class="seat-item"
+                  :class="{ 
+                    'active': selectedTable === t.code, 
+                    'booked': t.booked_seats >= t.total_seating,
+                    'locked': isTableLocked(category)
+                  }"
+                  @click="handleTableClick(t, category)"
+                >
+                  {{ t.code }}
+                </div>
               </div>
             </div>
-          </div>
+          </template>
+
+          <!-- TẦNG 2 KONVA CANVAS VIEW -->
+          <template v-else>
+            <Floor2BookingCanvas
+              v-model="selectedTable"
+              :initialSeats="floor2SeatsSelected"
+              :initialMode="floor2BookingMode"
+              :tablesData="tables"
+              @selectRoom="handleFloor2RoomSelect"
+            />
+          </template>
         </div>
       </section>
 
@@ -426,8 +522,14 @@ const displayTables = computed(() => {
         <div class="d-flex justify-content-between align-items-center h-100">
           <div class="selection-info">
             <div class="text-dark fw-bold mb-0">
-              <span v-if="selectedPackage">{{ selectedPackage.name }}</span>
-              <span v-if="selectedTable"> · {{ selectedTable }} ☕️</span>
+              <template v-if="selectedFloor === 2">
+                <span>Tầng 2 (Bàn/Phòng riêng)</span>
+                <span v-if="selectedTable"> · {{ selectedTable }} ☕️</span>
+              </template>
+              <template v-else>
+                <span v-if="selectedPackage">{{ selectedPackage.name }}</span>
+                <span v-if="selectedTable"> · {{ selectedTable }} ☕️</span>
+              </template>
             </div>
             <div class="text-muted small">
               {{ start_time?.split('T')[1] }} ➞ {{ end_time?.split('T')[1] }}
@@ -435,7 +537,7 @@ const displayTables = computed(() => {
           </div>
           <div class="action-right d-flex flex-column align-items-end">
             <div class="total-amount fw-bold text-dark fs-4">{{ formatVND(total) }}</div>
-            <div v-if="total > (selectedPackage?.price || 0)" class="text-danger small" style="margin-top: -5px;">+{{ formatVND(total - (selectedPackage?.price || 0)) }} đồ thêm</div>
+            <div v-if="selectedFloor === 1 && selectedPackage && total > (selectedPackage?.price || 0)" class="text-danger small" style="margin-top: -5px;">+{{ formatVND(total - (selectedPackage?.price || 0)) }} đồng thêm</div>
           </div>
         </div>
         <button class="btn btn-confirm w-100 py-3 mt-2" @click="goSummary">

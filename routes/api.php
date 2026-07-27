@@ -16,6 +16,7 @@ Route::post('/booking', [BookingController::class, 'store']);
 Route::get('/extras', [BookingController::class, 'extras']);
 Route::get('/packages', [BookingController::class, 'packages']);
 Route::get('/tables', [BookingController::class, 'tables']);
+Route::get('/floor-layout', [BookingController::class, 'getFloorLayout']);
 Route::get('/booking/{booking}/vietqr', [BookingController::class, 'getVietQR']);
 Route::post('/booking/upload-proof', [BookingController::class, 'uploadProof']);
 Route::post('/momo/callback', [BookingController::class, 'handleMomoCallback']);
@@ -82,6 +83,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/admin/tables', [BookingController::class, 'storeTable']);
         Route::put('/admin/tables/{table}', [BookingController::class, 'updateTable']);
         Route::delete('/admin/tables/{table}', [BookingController::class, 'destroyTable']);
+        Route::post('/admin/floor-layout', [BookingController::class, 'saveFloorLayout']);
 
         Route::post('/admin/schedule', [AdminController::class, 'saveSchedule']);
         Route::delete('/admin/schedule/{id}', [AdminController::class, 'deleteSchedule']);

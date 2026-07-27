@@ -108,7 +108,14 @@ async function fetchData() {
             await fetchTables();
         }
     } catch (e) {
-        toast.error('Lỗi khi tải dữ liệu');
+        if (e.response && e.response.status === 401) {
+            toast.error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+            setTimeout(() => {
+                window.location.href = '/admin/login';
+            }, 1500);
+        } else {
+            toast.error('Lỗi khi tải dữ liệu: ' + (e.response?.data?.message || e.message));
+        }
     } finally {
         loading.value = false;
     }

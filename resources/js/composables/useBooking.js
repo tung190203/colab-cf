@@ -238,18 +238,41 @@ const extras = computed(() => {
 const usesExtraOnlyPricing = computed(() => {
   const hasPaidExtras = extras.value.some((e) => Number(e.price || 0) > 0);
   const hasZeroPriceExtras = extras.value.some((e) => Number(e.price || 0) === 0);
-  return hasPaidExtras && !hasZeroPriceExtras;
+  // Do not switch to extra-only pricing if package free drinks are being applied
+  const hasPackageFreeApplied = extras.value.some((e) => (e.freeApplied || 0) > 0);
+  return hasPaidExtras && !hasZeroPriceExtras && !hasPackageFreeApplied;
 });
 
 function extraLinePrice(e) {
-  if (usesExtraOnlyPricing.value) {
-    return e.price * (e.quantity || 1);
+  // If recalculateFree has computed totalPrice (accounts for free drink allowance), use it
+  if (typeof e.totalPrice !== 'undefined') {
+    return Number(e.totalPrice) || 0;
   }
-
+  if (usesExtraOnlyPricing.value) {
+    return Number(e.price || 0) * (e.quantity || 1);
+  }
   return 0;
 }
 
+const floor2CustomPrice = ref(0);
+const selectedFloor = ref(1);
+const floor2BookingMode = ref('seat');
+const floor2SeatCount = ref(1);
+const floor2SeatsSelected = ref([]); // e.g. ['01', '02']
+
 const total = computed(() => {
+  // ── FLOOR 2 ──────────────────────────────────────────────────────────────
+  // No package, no free drinks. Charge: seat/room price + all drinks at full price.
+  if (selectedFloor.value === 2) {
+    let s = floor2CustomPrice.value;
+    extras.value.forEach((e) => {
+      s += Number(e.price || 0) * (e.quantity || 1);
+    });
+    return s;
+  }
+
+  // ── FLOOR 1 ──────────────────────────────────────────────────────────────
+  // Package-based pricing with free drinks allowance. Original logic untouched.
   let s = 0;
   if (selectedPackage.value && !usesExtraOnlyPricing.value) {
     s += selectedPackage.value.price;
@@ -257,11 +280,14 @@ const total = computed(() => {
   extras.value.forEach((e) => {
     s += extraLinePrice(e);
   });
-
   return s;
 });
 
 const endTime = computed(() => {
+  if (end_time.value) {
+    const d = new Date(end_time.value);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
   if (!selectedPackage.value) return '-';
   const d = new Date();
   d.setMinutes(d.getMinutes() + selectedPackage.value.duration);
@@ -577,6 +603,11 @@ export function useBooking() {
     bookingList,
     fetchUserByPhone,
     addMemberToColab,
-    currentBookingId
+    currentBookingId,
+    floor2CustomPrice,
+    selectedFloor,
+    floor2BookingMode,
+    floor2SeatCount,
+    floor2SeatsSelected
   };
 }

@@ -42,20 +42,7 @@ const filters = ref({
 const form = ref(defaultForm());
 
 const pendingHandovers = computed(() => handovers.value.filter((item) => item.status === 'pending'));
-const materialOptions = computed(() => prepare.value?.materials || []);
-const selectedProductIds = computed(() => form.value.sold_products.map((item) => Number(item.product_id)).filter(Boolean));
-const selectedDamagedMaterialIds = computed(() => form.value.damaged_materials.map((item) => Number(item.material_id)).filter(Boolean));
-const selectedSoldProducts = computed(() => (
-    form.value.sold_products
-        .map((item) => {
-            const product = menuProducts.value.find((p) => Number(p.id) === Number(item.product_id));
-            return product ? { item, product } : null;
-        })
-        .filter(Boolean)
-));
-const soldProductTotalQuantity = computed(() => (
-    form.value.sold_products.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
-));
+
 const expectedEndingCash = computed(() => Number(form.value.opening_cash || 0) + Number(form.value.revenue_cash || 0));
 const shiftReport = computed(() => prepare.value?.report || null);
 const reportSummary = computed(() => shiftReport.value?.summary || {
@@ -93,9 +80,8 @@ function defaultForm() {
         total_orders: 0,
         revenue_cash: 0,
         revenue_transfer: 0,
-        sold_products: [],
+        inventory_items: [],
         damaged_materials: [],
-        materials: [],
         equipment_checklist: {
             may_pha: { ok: true, note: '' },
             may_in: { ok: true, note: '' },
@@ -144,6 +130,11 @@ function parseNumericInput(value, allowDecimal = false) {
 
 function setNumericField(target, key, event, allowDecimal = false) {
     target[key] = parseNumericInput(event.target.value, allowDecimal);
+}
+
+function setInventoryNumericField(item, key, event) {
+    setNumericField(item, key, event, true);
+    item.closing_stock = Number(item.opening_stock || 0) + Number(item.imported_stock || 0) - Number(item.used_stock || 0);
 }
 
 function setReceiveCashActual(event) {
@@ -195,27 +186,7 @@ function statusLabel(status) {
     }[status] || status;
 }
 
-function addSoldProductRow() {
-    form.value.sold_products.push({
-        product_id: '',
-        quantity: 1,
-    });
-}
 
-function removeSoldProduct(productId) {
-    form.value.sold_products = form.value.sold_products.filter((item) => item !== productId);
-}
-
-function productOptionsFor(item) {
-    return menuProducts.value.filter((product) => (
-        Number(product.id) === Number(item.product_id)
-        || !selectedProductIds.value.includes(Number(product.id))
-    ));
-}
-
-function normalizeSoldProductQuantity(item) {
-    item.quantity = Math.max(1, Number(item.quantity || 1));
-}
 
 function addDamagedMaterialRow() {
     form.value.damaged_materials.push({
@@ -230,16 +201,13 @@ function removeDamagedMaterialRow(item) {
 }
 
 function materialOptionsFor(item) {
-    return materialOptions.value.filter((material) => (
+    return (prepare.value?.materials || []).filter((material) => (
         Number(material.id) === Number(item.material_id)
-        || !selectedDamagedMaterialIds.value.includes(Number(material.id))
+        || !form.value.damaged_materials.map(d => Number(d.material_id)).includes(Number(material.id))
     ));
 }
 
-function materialLabel(materialId) {
-    const material = materialOptions.value.find((item) => Number(item.id) === Number(materialId));
-    return material ? `${material.name} (${material.unit})` : 'Chọn NVL';
-}
+
 
 async function fetchPrepare() {
     loading.value = true;
@@ -256,13 +224,14 @@ async function fetchPrepare() {
             total_orders: res.data.total_orders,
             revenue_cash: res.data.revenue_cash,
             revenue_transfer: res.data.revenue_transfer,
-            materials: (res.data.materials || []).map((material) => ({
+            inventory_items: (res.data.materials || []).map((material) => ({
                 material_id: material.id,
                 material_name: material.name,
                 unit: material.unit,
-                theoretical: Number(material.current_stock),
-                actual: Number(material.current_stock),
-                reason: '',
+                opening_stock: Number(material.current_stock),
+                imported_stock: 0,
+                used_stock: 0,
+                closing_stock: Number(material.current_stock),
             })),
         };
     } catch (error) {
@@ -302,7 +271,6 @@ async function saveHandover() {
 
     const payload = {
         ...form.value,
-        sold_products: form.value.sold_products.filter((item) => item.product_id && Number(item.quantity || 0) > 0),
         damaged_materials: form.value.damaged_materials.filter((item) => item.material_id && Number(item.quantity || 0) > 0),
     };
 
@@ -389,8 +357,8 @@ function openDetail(handover) {
             material_id: item.material_id,
             material_name: item.material_name,
             unit: item.unit,
-            expected: Number(item.actual || 0),
-            actual_received: Number(existing?.actual_received ?? item.actual ?? 0),
+            expected: Number(item.closing_stock || 0),
+            actual_received: Number(existing?.actual_received ?? item.closing_stock ?? 0),
             reason: existing?.reason || '',
         };
     });
@@ -503,35 +471,55 @@ onMounted(async () => {
                     <div class="sh-block">
                         <div class="sh-block-head">
                             <div>
-                                <h4>2. Hàng bán trong ca</h4>
-                                <p>Thêm món bán từ POS để tính NVL đã dùng.</p>
-                            </div>
-                            <button type="button" class="sh-add-btn" @click="addSoldProductRow">
-                                <Plus :size="17" /> Thêm món
-                            </button>
-                        </div>
-                        <div class="sh-compact-list" v-if="form.sold_products.length">
-                            <div v-for="item in form.sold_products" :key="item" class="sh-compact-row">
-                                <select v-model="item.product_id">
-                                    <option value="">Chọn món</option>
-                                    <option v-for="product in productOptionsFor(item)" :key="product.id" :value="product.id">
-                                        {{ product.name }} · {{ product.category }}
-                                    </option>
-                                </select>
-                                <input
-                                    :value="formatNumber(item.quantity)"
-                                    type="text"
-                                    inputmode="numeric"
-                                    class="numeric-input"
-                                    @input="setNumericField(item, 'quantity', $event)"
-                                    @blur="normalizeSoldProductQuantity(item)"
-                                />
-                                <button type="button" class="sh-icon-danger" @click="removeSoldProduct(item)">
-                                    <Trash2 :size="17" />
-                                </button>
+                                <h4>2. Kiểm kê nguyên vật liệu</h4>
+                                <p>Công thức: Tồn cuối = Tồn đầu + Nhập - Xuất</p>
                             </div>
                         </div>
-                        <div v-else class="sh-inline-empty">Chưa thêm món bán</div>
+                        <div class="excel-grid-container">
+                            <table class="excel-table">
+                                <thead>
+                                    <tr>
+                                        <th>STT</th>
+                                        <th>Tên hàng hóa</th>
+                                        <th>ĐVT</th>
+                                        <th class="col-head">TỒN ĐẦU (1)</th>
+                                        <th class="col-head bg-blue">NHẬP (2)</th>
+                                        <th class="col-head bg-red">XUẤT DÙNG (3)</th>
+                                        <th class="col-head bg-yellow">TỒN CUỐI (4)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="(item, index) in form.inventory_items" :key="item.material_id">
+                                        <td style="text-align: center; color: #64748b;">{{ index + 1 }}</td>
+                                        <td style="font-weight: 600; color: #1e293b;">{{ item.material_name }}</td>
+                                        <td style="text-align: center; color: #475569;">{{ item.unit }}</td>
+                                        <td style="text-align: right; font-weight: 500; color: #334155;">{{ formatNumber(item.opening_stock) }}</td>
+                                        <td class="bg-blue" style="padding: 0;">
+                                            <input 
+                                                type="text" 
+                                                class="excel-input"
+                                                :value="formatNumber(item.imported_stock)"
+                                                @input="setInventoryNumericField(item, 'imported_stock', $event)"
+                                            />
+                                        </td>
+                                        <td class="bg-red" style="padding: 0;">
+                                            <input 
+                                                type="text" 
+                                                class="excel-input"
+                                                :value="formatNumber(item.used_stock)"
+                                                @input="setInventoryNumericField(item, 'used_stock', $event)"
+                                            />
+                                        </td>
+                                        <td class="bg-yellow" style="text-align: right; font-weight: 700;" :style="{ color: item.closing_stock < 0 ? '#dc2626' : '#15803d' }">
+                                            {{ formatNumber(item.closing_stock) }}
+                                        </td>
+                                    </tr>
+                                    <tr v-if="!form.inventory_items.length">
+                                        <td colspan="7" style="text-align: center; padding: 2rem; color: #64748b;">Chưa có nguyên vật liệu nào trong hệ thống</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
 
                     <div class="sh-block">
@@ -684,40 +672,41 @@ onMounted(async () => {
                             <input v-model="receiveCashReason" type="text" placeholder="Ví dụ: thiếu 20.000đ khi kiểm két" />
                         </label>
 
-                        <h4>2.Thống kê NVL</h4>
+                        <h4>2. Bảng kiểm kho (từ ca trước)</h4>
                         <div class="sh-snapshot">
-                            <div class="sh-snapshot-row head">
+                            <div class="sh-snapshot-row head" style="grid-template-columns: minmax(0, 1fr) 100px 120px 100px 140px;">
                                 <span>NVL</span>
-                                <span>Đã dùng</span>
-                                <span>Còn lại</span>
-                                <span>Thực nhận</span>
-                                <span>Trạng thái</span>
+                                <span>Tồn đầu</span>
+                                <span>Nhập / Xuất</span>
+                                <span>Tồn cuối</span>
+                                <span>Nhận thực tế</span>
                             </div>
-                            <div v-for="(item, index) in selected.nvl_snapshot" :key="item.material_id" class="sh-snapshot-row" :class="{ warn: item.has_alert || Number(receiveMaterialChecks[index]?.actual_received || 0) !== Number(item.actual || 0) }">
+                            <div v-for="(item, index) in selected.nvl_snapshot" :key="item.material_id" class="sh-snapshot-row" style="grid-template-columns: minmax(0, 1fr) 100px 120px 100px 140px;" :class="{ warn: Number(receiveMaterialChecks[index]?.actual_received || 0) !== Number(item.closing_stock || 0) }">
                                 <strong>{{ item.material_name }}</strong>
-                                <span>Đã dùng {{ formatNumber(item.required ?? item.diff) }} {{ item.unit }}</span>
-                                <span>Còn lại {{ formatNumber(item.actual) }} {{ item.unit }}</span>
-                                <input
-                                    v-if="selected.status === 'pending'"
-                                    :value="formatNumber(receiveMaterialChecks[index].actual_received)"
-                                    type="text"
-                                    inputmode="decimal"
-                                    class="numeric-input"
-                                    @input="setNumericField(receiveMaterialChecks[index], 'actual_received', $event, true)"
-                                />
-                                <span v-else>{{ formatNumber(receiveMaterialChecks[index]?.actual_received ?? item.actual) }} {{ item.unit }}</span>
-                                <input
-                                    v-if="selected.status === 'pending' && Number(receiveMaterialChecks[index]?.actual_received || 0) !== Number(item.actual || 0)"
-                                    v-model="receiveMaterialChecks[index].reason"
-                                    type="text"
-                                    placeholder="Lý do lệch"
-                                />
-                                <em v-else>
-                                    {{ Number(receiveMaterialChecks[index]?.actual_received ?? item.actual) !== Number(item.actual || 0)
-                                        ? (receiveMaterialChecks[index]?.reason || 'Có sai lệch')
-                                        : (item.has_alert ? (item.reason || 'Đang cảnh báo') : 'Ổn')
-                                    }}
-                                </em>
+                                <span>{{ formatNumber(item.opening_stock) }} {{ item.unit }}</span>
+                                <span>+{{ formatNumber(item.imported_stock) }} / -{{ formatNumber(item.used_stock) }}</span>
+                                <span><strong>{{ formatNumber(item.closing_stock) }}</strong> {{ item.unit }}</span>
+                                <div style="display: flex; flex-direction: column; gap: 4px;">
+                                    <input
+                                        v-if="selected.status === 'pending'"
+                                        :value="formatNumber(receiveMaterialChecks[index].actual_received)"
+                                        type="text"
+                                        inputmode="decimal"
+                                        class="numeric-input"
+                                        @input="setNumericField(receiveMaterialChecks[index], 'actual_received', $event, true)"
+                                    />
+                                    <span v-else>{{ formatNumber(receiveMaterialChecks[index]?.actual_received ?? item.closing_stock) }} {{ item.unit }}</span>
+                                    
+                                    <input
+                                        v-if="selected.status === 'pending' && Number(receiveMaterialChecks[index]?.actual_received || 0) !== Number(item.closing_stock || 0)"
+                                        v-model="receiveMaterialChecks[index].reason"
+                                        type="text"
+                                        placeholder="Lý do lệch"
+                                    />
+                                    <em v-else-if="selected.status !== 'pending' && Number(receiveMaterialChecks[index]?.actual_received ?? item.closing_stock) !== Number(item.closing_stock || 0)">
+                                        {{ receiveMaterialChecks[index]?.reason || 'Có sai lệch' }}
+                                    </em>
+                                </div>
                             </div>
                             <div v-if="!selected.nvl_snapshot?.length" class="sh-empty compact">Chưa có dữ liệu NVL</div>
                         </div>
@@ -859,6 +848,21 @@ textarea { resize: vertical; }
 .sh-primary { border: 1px solid #20451f; background: #20451f; color: #fff; }
 .sh-secondary { border: 1px solid #d0d5dd; background: #fff; color: #344054; }
 .sh-secondary.danger { color: #b42318; border-color: #fecaca; }
+
+/* Excel Grid Styles */
+.excel-grid-container { overflow-x: auto; max-height: 500px; }
+.excel-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.875rem; }
+.excel-table th { background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px 12px; font-weight: 800; color: #334155; position: sticky; top: 0; z-index: 10; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.excel-table td { border: 1px solid #e2e8f0; padding: 8px 12px; vertical-align: middle; }
+.excel-table tbody tr:hover { background: #f8fafc; }
+.col-head { text-align: right !important; width: 18%; }
+.bg-blue { background-color: #eff6ff !important; }
+.bg-red { background-color: #fef2f2 !important; }
+.bg-yellow { background-color: #fefce8 !important; }
+
+.excel-input { width: 100%; height: 100%; min-height: 40px; padding: 10px 12px; border: none; background: transparent; text-align: right; outline: none; font-weight: 600; font-size: 0.875rem; color: #1e293b; }
+.excel-input:focus { background: #fff; outline: 2px solid #3b82f6; outline-offset: -2px; }
+.excel-input:disabled { color: #94a3b8; cursor: not-allowed; }
 .sh-primary:disabled, .sh-secondary:disabled { opacity: .65; cursor: not-allowed; }
 .sh-empty { padding: 40px; text-align: center; color: #667085; }
 .sh-empty.compact { padding: 16px; }

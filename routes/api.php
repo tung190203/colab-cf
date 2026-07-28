@@ -92,6 +92,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Material Management
         Route::get('/materials', [MaterialController::class, 'index']);
+        Route::post('/materials/bulk', [MaterialController::class, 'bulkStore']);
         Route::post('/materials', [MaterialController::class, 'store']);
         Route::patch('/materials/{material}', [MaterialController::class, 'update']);
         Route::delete('/materials/{material}', [MaterialController::class, 'destroy']);
@@ -115,6 +116,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/shift-handover/{shiftHandover}', [ShiftHandoverController::class, 'show']);
     Route::post('/shift-handover/{shiftHandover}/confirm', [ShiftHandoverController::class, 'confirm']);
     Route::post('/shift-handover/{shiftHandover}/dispute', [ShiftHandoverController::class, 'dispute']);
+
+    // Daily Inventory (Kiểm kho hàng ngày)
+
     Route::get('/pos-orders/options', [PosOrderController::class, 'options']);
     Route::get('/pos-orders', [PosOrderController::class, 'index']);
     Route::post('/pos-orders', [PosOrderController::class, 'store']);

@@ -69,13 +69,14 @@ class ShiftHandoverController extends Controller
             'total_orders' => 'required|integer|min:0',
             'revenue_cash' => 'required|integer|min:0',
             'revenue_transfer' => 'required|integer|min:0',
-            'sold_products' => 'nullable|array',
-            'sold_products.*.product_id' => 'required|exists:extras,id',
-            'sold_products.*.quantity' => 'required|integer|min:1',
-            'damaged_materials' => 'nullable|array',
-            'damaged_materials.*.material_id' => 'required|exists:materials,id',
-            'damaged_materials.*.quantity' => 'required|numeric|min:0.001',
-            'damaged_materials.*.note' => 'nullable|string|max:500',
+            'inventory_items' => 'nullable|array',
+            'inventory_items.*.material_id' => 'required|exists:materials,id',
+            'inventory_items.*.material_name' => 'required|string',
+            'inventory_items.*.unit' => 'nullable|string',
+            'inventory_items.*.opening_stock' => 'required|numeric|min:0',
+            'inventory_items.*.imported_stock' => 'required|numeric|min:0',
+            'inventory_items.*.used_stock' => 'required|numeric|min:0',
+            'inventory_items.*.closing_stock' => 'required|numeric',
             'equipment_checklist' => 'nullable|array',
             'handover_note' => 'nullable|string|max:3000',
         ]);
@@ -87,17 +88,13 @@ class ShiftHandoverController extends Controller
         }
 
         $handover = DB::transaction(function () use ($request, $validated) {
-            $soldProducts = $this->normalizeSoldProducts($validated['sold_products'] ?? []);
-            $damagedMaterials = $this->normalizeDamagedMaterials($validated['damaged_materials'] ?? []);
-            $snapshotData = $this->buildNvlSnapshotFromSoldProducts($soldProducts);
-            $snapshot = $snapshotData['snapshot'];
-            $hasAlert = $snapshotData['has_alert'];
+            $inventoryItems = $validated['inventory_items'] ?? [];
             $now = Carbon::now('Asia/Ho_Chi_Minh');
             $lastHandover = ShiftHandover::where('status', 'confirmed')->latest('received_at')->first();
             $start = $lastHandover?->received_at ?: $now->copy()->startOfDay();
 
             $cashDiff = (int) $validated['cash_actual'] - (int) $validated['cash_theoretical'];
-            $hasAlert = $hasAlert || abs($cashDiff) > self::CASH_DIFF_THRESHOLD;
+            $hasAlert = abs($cashDiff) > self::CASH_DIFF_THRESHOLD;
 
             return ShiftHandover::create([
                 'date' => $validated['date'],
@@ -114,9 +111,9 @@ class ShiftHandoverController extends Controller
                 'revenue_transfer' => $validated['revenue_transfer'],
                 'total_revenue' => $validated['revenue_cash'] + $validated['revenue_transfer'],
                 'report_snapshot' => $this->buildShiftReport($start, $now),
-                'sold_products' => $snapshotData['sold_products'],
-                'nvl_snapshot' => $snapshot,
-                'damaged_materials' => $damagedMaterials,
+                'sold_products' => [],
+                'nvl_snapshot' => $inventoryItems,
+                'damaged_materials' => [],
                 'equipment_checklist' => $validated['equipment_checklist'] ?? [],
                 'handover_note' => $validated['handover_note'] ?? null,
                 'has_alert' => $hasAlert,
@@ -165,11 +162,23 @@ class ShiftHandoverController extends Controller
             ], 422);
         }
 
-        $shiftHandover->update([
-            'incoming_employee_id' => $request->user()->id,
-            'received_at' => now(),
-            'status' => 'confirmed',
-        ]);
+        DB::transaction(function () use ($request, $shiftHandover) {
+            $shiftHandover->update([
+                'incoming_employee_id' => $request->user()->id,
+                'received_at' => now(),
+                'status' => 'confirmed',
+            ]);
+
+            if (is_array($shiftHandover->nvl_snapshot)) {
+                foreach ($shiftHandover->nvl_snapshot as $item) {
+                    if (isset($item['material_id']) && isset($item['closing_stock'])) {
+                        Material::where('id', $item['material_id'])->update([
+                            'current_stock' => $item['closing_stock']
+                        ]);
+                    }
+                }
+            }
+        });
 
         return response()->json(['message' => 'Đã xác nhận nhận ca', 'handover' => $shiftHandover->fresh(['outgoingEmployee:id,name', 'incomingEmployee:id,name'])]);
     }

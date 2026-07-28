@@ -35,6 +35,7 @@ import StaffSchedule from '../components/staff/StaffSchedule.vue';
 import StaffPayroll from '../components/staff/StaffPayroll.vue';
 import QRCheckIn from '../components/staff/QRCheckIn.vue';
 
+
 const routes = [
   // ─── Public routes (customer flow) ─────────────────────────────────────────
   { path: '/', component: Welcome, name: 'Welcome' },
@@ -74,6 +75,7 @@ const routes = [
   { path: '/staff/schedule', component: StaffSchedule, name: 'StaffSchedule', meta: { requiresAuth: true, roles: ['admin', 'staff', 'shift_leader'] } },
   { path: '/staff/payroll', component: StaffPayroll, name: 'StaffPayroll', meta: { requiresAuth: true, roles: ['admin', 'staff', 'shift_leader'] } },
   { path: '/staff/shift-handover', component: ShiftHandover, name: 'StaffShiftHandover', meta: { requiresAuth: true, roles: ['admin', 'staff', 'shift_leader'] } },
+
   { path: '/staff/manual-orders', component: ManualPosOrders, name: 'ManualPosOrders', meta: { requiresAuth: true, roles: ['admin', 'staff', 'shift_leader'] } },
   { path: '/checkin', component: QRCheckIn, name: 'QRCheckIn', meta: { requiresAuth: true, roles: ['staff', 'shift_leader'] } },
 

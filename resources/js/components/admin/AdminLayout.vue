@@ -79,7 +79,7 @@ const navItems = computed(() => {
         { label: 'Thống kê khách hàng', icon: ChartNoAxesColumnIncreasing, to: '/admin/customer-stats', roles: ['admin'] },
         { label: 'Quản lý nhân viên', icon: Users, to: '/admin/staff', roles: ['admin', 'shift_leader'] },
         { label: 'Quản lý Menu', icon: Coffee, to: '/admin/menu', roles: ['admin', 'shift_leader'] },
-        { label: 'Nguyên vật liệu', icon: PackageOpen, to: '/admin/materials', roles: ['admin', 'shift_leader'] },
+        { label: 'Quản lý Kho', icon: PackageOpen, to: '/admin/materials', roles: ['admin', 'shift_leader'] },
         { label: 'Công thức món', icon: ListChecks, to: '/admin/recipes', roles: ['admin', 'shift_leader'] },
         { label: 'Quản lý sự kiện', icon: CalendarRange, to: '/admin/events', roles: ['admin'] },
         { label: 'Giao ca', icon: ClipboardPenLine, to: isAdmin() || isShiftLeader() ? '/admin/shift-handovers' : '/staff/shift-handover', roles: ['admin', 'staff', 'shift_leader'] },
@@ -103,7 +103,9 @@ const handleLogout = async () => {
     router.push('/admin/login');
 };
 
-const isActive = (path) => route.path === path;
+const isActive = (path) => {
+    return route.path === path;
+};
 </script>
 
 <template>

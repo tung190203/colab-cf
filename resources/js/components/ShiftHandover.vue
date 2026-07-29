@@ -898,15 +898,30 @@ textarea { resize: vertical; }
 @media (max-width: 768px) {
     .sh-block-head, .sh-sold-row { grid-template-columns: 1fr; }
     .sh-block-head { flex-direction: column; }
-    .sh-shift-info, .sh-compact-row, .sh-compact-row.damaged, .sh-damaged-item { grid-template-columns: 1fr; }
+    .sh-shift-info { grid-template-columns: 1fr; }
     .sh-report-hero, .sh-report-kpis { grid-template-columns: 1fr; }
     .sh-report-row { grid-template-columns: minmax(0, 1fr) 54px 110px; }
-    .sh-grid.two, .sh-equipment-row, .sh-snapshot-row { grid-template-columns: 1fr; }
+    .sh-grid.two, .sh-equipment-row { grid-template-columns: 1fr; }
     .sh-filters { grid-template-columns: 1fr; }
     .sh-list-item, .sh-header { flex-direction: column; align-items: stretch; }
     .sh-header-actions { justify-content: stretch; }
     .sh-month { width: 100%; }
     .sh-actions { flex-direction: column; }
     .sh-primary, .sh-secondary { width: 100%; }
+    
+    .sh-tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+    .sh-tabs button { flex: 0 0 auto; }
+    
+    .sh-snapshot { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .sh-snapshot-row { min-width: 700px; }
+    
+    .excel-grid-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .excel-table { min-width: 700px; }
+    
+    .sh-compact-list, .sh-damaged-list { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .sh-compact-row, .sh-compact-row.damaged { min-width: 500px; }
+    .sh-damaged-item { min-width: 450px; }
+    
+    .sh-modal { padding: 12px; }
 }
 </style>

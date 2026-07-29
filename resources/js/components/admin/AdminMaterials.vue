@@ -445,4 +445,15 @@ onMounted(fetchMaterials);
 .log-stock strong { display: block; font-size: 1.1rem; color: #16a34a; }
 .log-stock.deduct strong { color: #dc2626; }
 .log-stock span { display: block; font-size: 0.8rem; color: #64748b; margin-top: 4px; }
+
+@media (max-width: 768px) {
+    .materials-page { height: auto; min-height: calc(100vh - 100px); }
+    .toolbar { flex-direction: column; align-items: stretch; }
+    .search-box { max-width: 100%; }
+    .status-filter { width: 100%; }
+    .primary-btn { justify-content: center; }
+    .excel-table { min-width: 800px; }
+    .page-tabs { overflow-x: auto; white-space: nowrap; flex-wrap: nowrap; }
+    .page-tab { flex: 0 0 auto; }
+}
 </style>

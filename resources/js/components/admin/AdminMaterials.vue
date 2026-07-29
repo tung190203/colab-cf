@@ -33,6 +33,8 @@ const stockLogs = ref([]);
 const logsLoading = ref(false);
 const showHideConfirm = ref(false);
 const pendingHideMaterial = ref(null);
+const showStockChangeConfirm = ref(false);
+const validItemsToSave = ref([]);
 
 const alertsCount = computed(() => materials.value.filter(item => item.id && isLowStock(item)).length);
 
@@ -116,7 +118,7 @@ function removeRow(index) {
     }
 }
 
-async function saveAll() {
+function handleSaveClick() {
     // Filter out completely empty new rows
     const validItems = materials.value.filter(item => {
         if (item._isNew && !item.name.trim() && !item.price_per_unit) return false;
@@ -135,6 +137,17 @@ async function saveAll() {
         }
     }
 
+    const hasStockChanges = validItems.some(item => !item._isNew && normalizeNumber(item.current_stock) !== normalizeNumber(item._original?.current_stock));
+
+    if (hasStockChanges) {
+        validItemsToSave.value = validItems;
+        showStockChangeConfirm.value = true;
+    } else {
+        saveAll(validItems);
+    }
+}
+
+async function saveAll(validItems) {
     saving.value = true;
     try {
         await axios.post('/api/materials/bulk', { materials: validItems }, { headers: authHeader() });
@@ -144,6 +157,7 @@ async function saveAll() {
         toast.error(error.response?.data?.message || 'Lỗi khi lưu dữ liệu');
     } finally {
         saving.value = false;
+        showStockChangeConfirm.value = false;
     }
 }
 
@@ -230,7 +244,7 @@ onMounted(fetchMaterials);
                     <option value="inactive">Đã ẩn</option>
                     <option value="">Tất cả</option>
                 </select>
-                <button class="primary-btn" @click="saveAll" :disabled="saving">
+                <button class="primary-btn" @click="handleSaveClick" :disabled="saving">
                     <Save :size="18" />
                     {{ saving ? 'Đang lưu...' : 'Lưu tất cả thay đổi' }}
                 </button>
@@ -243,7 +257,7 @@ onMounted(fetchMaterials);
                             <th style="width: 40px; text-align: center;">#</th>
                             <th style="width: 250px;">Tên hàng hóa *</th>
                             <th style="width: 100px;">ĐVT *</th>
-                            <th style="width: 120px;" class="col-readonly">Tồn kho HT</th>
+                            <th style="width: 120px;">Tồn kho HT</th>
                             <th style="width: 120px;">Ngưỡng báo</th>
                             <th style="width: 150px;">Giá nhập (VND)</th>
                             <th>Ghi chú</th>
@@ -272,9 +286,12 @@ onMounted(fetchMaterials);
                                 <input type="text" class="excel-input text-center" v-model="item.unit" placeholder="kg, gram..." />
                             </td>
                             <td class="p-0 bg-gray-50">
-                                <div class="readonly-cell flex items-center justify-end gap-1" :class="{'text-orange-600 font-bold': isLowStock(item)}">
-                                    <AlertTriangle v-if="isLowStock(item)" :size="14" />
-                                    {{ item.id ? formatNumber(item.current_stock) : '0' }}
+                                <div style="position: relative; width: 100%; height: 100%; display: flex; align-items: center;">
+                                    <AlertTriangle v-if="isLowStock(item)" :size="14" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #ea580c; z-index: 10; pointer-events: none;" />
+                                    <input type="number" class="excel-input text-right" 
+                                        :style="isLowStock(item) ? 'padding-left: 32px;' : ''"
+                                        :class="{'text-orange-600 font-bold': isLowStock(item)}"
+                                        v-model="item.current_stock" min="0" step="0.01" />
                                 </div>
                             </td>
                             <td class="p-0">
@@ -360,6 +377,17 @@ onMounted(fetchMaterials);
             type="warning"
             @confirm="confirmHideMaterial"
             @cancel="showHideConfirm = false"
+        />
+
+        <ConfirmDialog
+            :show="showStockChangeConfirm"
+            title="Xác nhận lưu thay đổi"
+            message="Xác nhận chỉnh sửa tồn kho có thể sai với số liệu giao ca của nhân viên. Bạn có chắc chắn muốn lưu?"
+            confirm-text="Đồng ý lưu"
+            cancel-text="Hủy"
+            type="warning"
+            @confirm="saveAll(validItemsToSave)"
+            @cancel="showStockChangeConfirm = false"
         />
     </AdminLayout>
 </template>

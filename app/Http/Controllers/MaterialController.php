@@ -29,7 +29,7 @@ class MaterialController extends Controller
         $perPage = (int) $request->input('per_page', 10);
         $materials = $query
             ->orderByDesc('active')
-            ->orderBy('name')
+            ->orderBy('id')
             ->paginate($perPage);
 
         return response()->json([

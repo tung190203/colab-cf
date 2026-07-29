@@ -12,12 +12,12 @@
     "src": "resources/images/logo.png"
   },
   "resources/js/app.js": {
-    "file": "assets/app-C4tdJ9xl.js",
+    "file": "assets/app-wW4UP6_K.js",
     "name": "app",
     "src": "resources/js/app.js",
     "isEntry": true,
     "css": [
-      "assets/app-Bgwc6HwX.css"
+      "assets/app-DW2eqeDU.css"
     ],
     "assets": [
       "assets/logo-rouzRcj0.png"

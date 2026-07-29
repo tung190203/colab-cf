@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Material;
+use App\Models\StockLog;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -66,6 +67,7 @@ class MaterialController extends Controller
             'materials.*.id' => 'nullable|exists:materials,id',
             'materials.*.name' => 'required|string|max:255',
             'materials.*.unit' => 'required|string|max:30',
+            'materials.*.current_stock' => 'nullable|numeric|min:0',
             'materials.*.low_stock_threshold' => 'required|numeric|min:0',
             'materials.*.price_per_unit' => 'nullable|numeric|min:0',
             'materials.*.note' => 'nullable|string',
@@ -85,28 +87,60 @@ class MaterialController extends Controller
                             throw new \Exception('Tên nguyên vật liệu "' . $item['name'] . '" đã tồn tại.');
                         }
                     }
+                    
+                    $oldStock = (float)$material->current_stock;
+                    $newStock = isset($item['current_stock']) ? (float)$item['current_stock'] : $oldStock;
+
                     $material->update([
                         'name' => $item['name'],
                         'unit' => $item['unit'],
+                        'current_stock' => $newStock,
                         'low_stock_threshold' => (float)$item['low_stock_threshold'],
                         'price_per_unit' => isset($item['price_per_unit']) ? (float)$item['price_per_unit'] : null,
                         'note' => $item['note'] ?? null,
                         'active' => $item['active'] ?? true,
                     ]);
+
+                    if (abs($oldStock - $newStock) > 0.0001) {
+                        StockLog::create([
+                            'material_id' => $material->id,
+                            'type' => 'adjustment',
+                            'quantity' => $newStock - $oldStock,
+                            'stock_before' => $oldStock,
+                            'stock_after' => $newStock,
+                            'note' => 'Cập nhật từ quản lý kho',
+                            'created_by' => $request->user()?->id,
+                        ]);
+                    }
                 } else {
                     $exists = Material::where('name', $item['name'])->exists();
                     if ($exists) {
                         throw new \Exception('Tên nguyên vật liệu "' . $item['name'] . '" đã tồn tại.');
                     }
-                    Material::create([
+                    
+                    $initialStock = isset($item['current_stock']) ? (float)$item['current_stock'] : 0;
+                    
+                    $material = Material::create([
                         'name' => $item['name'],
                         'unit' => $item['unit'],
-                        'current_stock' => 0, // Default to 0, only updated via inventory
+                        'current_stock' => $initialStock,
                         'low_stock_threshold' => (float)$item['low_stock_threshold'],
                         'price_per_unit' => isset($item['price_per_unit']) ? (float)$item['price_per_unit'] : null,
                         'note' => $item['note'] ?? null,
                         'active' => $item['active'] ?? true,
                     ]);
+
+                    if ($initialStock > 0) {
+                        StockLog::create([
+                            'material_id' => $material->id,
+                            'type' => 'adjustment',
+                            'quantity' => $initialStock,
+                            'stock_before' => 0,
+                            'stock_after' => $initialStock,
+                            'note' => 'Khởi tạo tồn kho ban đầu',
+                            'created_by' => $request->user()?->id,
+                        ]);
+                    }
                 }
             }
             \Illuminate\Support\Facades\DB::commit();

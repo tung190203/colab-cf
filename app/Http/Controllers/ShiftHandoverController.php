@@ -51,7 +51,7 @@ class ShiftHandoverController extends Controller
             'revenue_cash' => (int) $revenueCash,
             'revenue_transfer' => (int) $revenueTransfer,
             'report' => $shiftReport,
-            'materials' => Material::where('active', true)->orderBy('name')->get(),
+            'materials' => Material::where('active', true)->orderBy('id')->get(),
             'products' => $this->handoverProducts(),
             'staff' => User::whereIn('role', ['staff', 'shift_leader'])->orderBy('name')->get(['id', 'name', 'role']),
         ]);
@@ -638,7 +638,7 @@ class ShiftHandoverController extends Controller
                     'has_alert' => $isAlert,
                 ];
             })
-            ->sortBy('material_name')
+            ->sortBy('material_id')
             ->values()
             ->merge($missingRecipeRows)
             ->all();

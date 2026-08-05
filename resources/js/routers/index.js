@@ -27,6 +27,7 @@ import AdminPenaltyRules from '../components/admin/AdminPenaltyRules.vue';
 import AdminMaterials from '../components/admin/AdminMaterials.vue';
 import AdminRecipes from '../components/admin/AdminRecipes.vue';
 import EventManagement from '../components/admin/EventManagement.vue';
+import AdminSpotCheck from '../components/admin/AdminSpotCheck.vue';
 import ShiftHandover from '../components/ShiftHandover.vue';
 
 // Staff components
@@ -67,6 +68,7 @@ const routes = [
   { path: '/admin/floor-designer', component: AdminFloorDesigner, name: 'AdminFloorDesigner', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
   { path: '/admin/booking-setup', component: AdminBookingSetup, name: 'AdminBookingSetup', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
   { path: '/admin/events', component: EventManagement, name: 'AdminEvents', meta: { requiresAuth: true, roles: ['admin'] } },
+  { path: '/admin/spot-check', component: AdminSpotCheck, name: 'AdminSpotCheck', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
 
   // ─── Shared admin+staff routes ───────────────────────────────────────────────
   { path: '/staff', redirect: '/staff/dashboard' },

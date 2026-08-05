@@ -151,6 +151,10 @@ class ShiftHandoverController extends Controller
 
     public function confirm(Request $request, ShiftHandover $shiftHandover)
     {
+        $validated = $request->validate([
+            'spot_check_ok' => 'required|boolean'
+        ]);
+
         if ($shiftHandover->status !== 'pending') {
             return response()->json(['message' => 'Biên bản này không còn chờ xác nhận'], 422);
         }
@@ -162,11 +166,12 @@ class ShiftHandoverController extends Controller
             ], 422);
         }
 
-        DB::transaction(function () use ($request, $shiftHandover) {
+        DB::transaction(function () use ($request, $validated, $shiftHandover) {
             $shiftHandover->update([
                 'incoming_employee_id' => $request->user()->id,
                 'received_at' => now(),
                 'status' => 'confirmed',
+                'incoming_spot_check_ok' => $validated['spot_check_ok'],
             ]);
 
             if (is_array($shiftHandover->nvl_snapshot)) {

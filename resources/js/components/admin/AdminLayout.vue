@@ -31,7 +31,8 @@ import {
     PanelLeftClose,
     PanelLeftOpen,
     Menu,
-    X
+    X,
+    ShieldCheck,
 } from 'lucide-vue-next';
 
 const isCollapsed = ref(localStorage.getItem('admin_sidebar_collapsed') === 'true');
@@ -83,6 +84,7 @@ const navItems = computed(() => {
         { label: 'Công thức món', icon: ListChecks, to: '/admin/recipes', roles: ['admin', 'shift_leader'] },
         { label: 'Quản lý sự kiện', icon: CalendarRange, to: '/admin/events', roles: ['admin'] },
         { label: 'Giao ca', icon: ClipboardPenLine, to: isAdmin() || isShiftLeader() ? '/admin/shift-handovers' : '/staff/shift-handover', roles: ['admin', 'staff', 'shift_leader'] },
+        { label: 'Spot Check', icon: ShieldCheck, to: '/admin/spot-check', roles: ['admin', 'shift_leader'] },
         { label: 'Gói & bàn', icon: Settings2, to: '/admin/booking-setup', roles: ['admin', 'shift_leader'] },
         { label: 'Sơ đồ Tầng 2', icon: Layers3, to: '/admin/floor-designer', roles: ['admin', 'shift_leader'] },
         { label: 'Quản lý lịch làm', icon: CalendarDays, to: '/admin/schedule', roles: ['admin', 'shift_leader'] },

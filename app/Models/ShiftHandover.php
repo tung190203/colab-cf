@@ -34,6 +34,7 @@ class ShiftHandover extends Model
         'has_alert',
         'status',
         'dispute_note',
+        'incoming_spot_check_ok',
     ];
 
     protected $casts = [
@@ -55,6 +56,7 @@ class ShiftHandover extends Model
         'receive_material_discrepancies' => 'array',
         'equipment_checklist' => 'array',
         'has_alert' => 'boolean',
+        'incoming_spot_check_ok' => 'boolean',
     ];
 
     public function outgoingEmployee()

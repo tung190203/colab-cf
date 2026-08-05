@@ -30,6 +30,7 @@ const disputeNote = ref('');
 const receiveCashActual = ref('');
 const receiveCashReason = ref('');
 const receiveMaterialChecks = ref([]);
+const spotCheckOk = ref(false);
 const exportMonth = ref(new Date().toISOString().slice(0, 7));
 const menuProducts = ref([]);
 const filters = ref({
@@ -288,11 +289,16 @@ async function saveHandover() {
 }
 
 async function confirmHandover(handover) {
+    if (!spotCheckOk.value) {
+        toast.warning('Vui lòng xác nhận đã kiểm tra tình trạng quán trước khi nhận ca');
+        return;
+    }
     try {
-        await axios.post(`/api/shift-handover/${handover.id}/confirm`, {}, { headers: authHeader() });
+        await axios.post(`/api/shift-handover/${handover.id}/confirm`, { spot_check_ok: spotCheckOk.value }, { headers: authHeader() });
         toast.success('Đã xác nhận nhận ca');
         selected.value = null;
         disputeNote.value = '';
+        spotCheckOk.value = false;
         await fetchHandovers();
     } catch (error) {
         toast.error(error.response?.data?.message || 'Lỗi khi xác nhận nhận ca');
@@ -736,6 +742,12 @@ onMounted(async () => {
                                 Bạn không có lịch làm ca {{ selected.receive_shift_type }} ngày {{ selected.receive_date }}, nên không thể nhận biên bản này.
                             </div>
                             <textarea v-model="disputeNote" rows="3" placeholder="Nhập nội dung sai lệch nếu không đồng ý"></textarea>
+                                <div class="sh-spotcheck-label" :class="{ checked: spotCheckOk }" @click="spotCheckOk = !spotCheckOk">
+                                    <div class="sh-spotcheck-box">
+                                        <svg v-if="spotCheckOk" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2 7L5.5 10.5L12 3.5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                    </div>
+                                    <span>Tôi đã kiểm tra tình trạng quán: vệ sinh, setup, không gian — đạt chuẩn</span>
+                                </div>
                             <div class="sh-actions">
                                 <button class="sh-secondary danger" :disabled="!selected.can_confirm" @click="disputeHandover(selected)">Báo cáo sai lệch</button>
                                 <button class="sh-primary" :disabled="!selected.can_confirm" @click="confirmHandover(selected)">Xác nhận nhận ca</button>
@@ -835,6 +847,12 @@ textarea { resize: vertical; }
 .sh-cash-breakdown { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; padding: 10px; border-radius: 8px; background: #f9fafb; color: #667085; font-size: 13px; font-weight: 800; }
 .sh-diff { margin-top: 10px; padding: 10px; border-radius: 8px; background: #f0fdf4; color: #15803d; font-weight: 900; }
 .sh-schedule-warning { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding: 12px 14px; border: 1px solid #fed7aa; border-radius: 8px; background: #fff7ed; color: #9a3412; font-weight: 800; }
+.sh-spotcheck-label { display: flex; align-items: center; gap: 12px; margin: 14px 0; padding: 14px 16px; border: 2px solid #d1fae5; border-radius: 12px; background: linear-gradient(135deg, #f9fef9, #f0fdf4); cursor: pointer; font-size: 13.5px; color: #166534; font-weight: 600; line-height: 1.5; transition: all .18s; user-select: none; }
+.sh-spotcheck-label:hover { border-color: #6ee7b7; }
+.sh-spotcheck-label.checked { border-color: #16a34a; background: linear-gradient(135deg, #f0fdf4, #dcfce7); }
+.sh-spotcheck-box { width: 22px; height: 22px; border-radius: 7px; border: 2px solid #a7f3d0; background: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all .18s; }
+.sh-spotcheck-label.checked .sh-spotcheck-box { background: #16a34a; border-color: #16a34a; }
+.sh-spotcheck-box svg { width: 14px; height: 14px; }
 .sh-diff.warn, .sh-material-row.warn, .sh-list-item.alert, .sh-snapshot-row.warn { background: #fff7ed; color: #9a3412; }
 .sh-materials { overflow-x: auto; border: 1px solid #eaecf0; border-radius: 8px; }
 .sh-material-row { display: grid; grid-template-columns: minmax(180px, 1fr) 150px 140px minmax(180px, 1fr); gap: 10px; align-items: center; min-width: 760px; padding: 10px 12px; border-bottom: 1px solid #eaecf0; }

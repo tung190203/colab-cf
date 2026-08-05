@@ -133,4 +133,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/staff/schedule', [StaffController::class, 'getMySchedule']);
     Route::get('/staff/payroll', [StaffController::class, 'getMyPayroll']);
     Route::get('/staff/payroll/history', [StaffController::class, 'getMyPayrollHistory']);
+
+    // Spot Check
+    Route::get('/spotcheck/current-shift', [\App\Http\Controllers\SpotCheckController::class, 'currentShift']);
+    Route::get('/spotcheck/items', [\App\Http\Controllers\SpotCheckController::class, 'items']);
+    Route::post('/spotcheck', [\App\Http\Controllers\SpotCheckController::class, 'store']);
+    Route::post('/spotcheck/upload-photo', [\App\Http\Controllers\SpotCheckController::class, 'uploadPhoto']);
+    Route::get('/spotcheck/history', [\App\Http\Controllers\SpotCheckController::class, 'history']);
+    Route::get('/spotcheck/summary/{month}', [\App\Http\Controllers\SpotCheckController::class, 'summary']);
 });

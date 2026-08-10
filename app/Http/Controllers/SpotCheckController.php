@@ -39,7 +39,6 @@ class SpotCheckController extends Controller
         // Lấy danh sách nhân viên đang check-in
         $attendances = Attendance::with('staff:id,name')
             ->where('date', $today)
-            ->where('shift', $currentShift->key)
             ->whereNotNull('check_in_at')
             ->whereNull('check_out_at')
             ->get();

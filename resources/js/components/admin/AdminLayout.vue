@@ -76,7 +76,7 @@ const navItems = computed(() => {
         { label: 'Tổng quan', icon: LayoutDashboard, to: isAdmin() || isShiftLeader() ? '/admin/dashboard' : '/staff/dashboard', roles: ['admin', 'staff', 'shift_leader'] },
         { label: 'Quản lý đơn hàng', icon: ClipboardList, to: isAdmin() ? '/admin/orders' : '/staff/orders', roles: ['admin', 'staff', 'shift_leader'] },
         { label: 'Nhập đơn thủ công', icon: ShoppingCart, to: '/staff/manual-orders', roles: ['admin', 'staff', 'shift_leader'] },
-        { label: 'Quản lý thành viên', icon: UserCircle, to: '/admin/members/list', roles: ['admin'] },
+        { label: 'Quản lý thành viên', icon: UserCircle, to: '/admin/members/list', roles: ['admin', 'shift_leader'] },
         { label: 'Thống kê khách hàng', icon: ChartNoAxesColumnIncreasing, to: '/admin/customer-stats', roles: ['admin'] },
         { label: 'Quản lý nhân viên', icon: Users, to: '/admin/staff', roles: ['admin', 'shift_leader'] },
         { label: 'Quản lý Menu', icon: Coffee, to: '/admin/menu', roles: ['admin', 'shift_leader'] },

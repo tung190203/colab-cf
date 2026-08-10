@@ -86,8 +86,8 @@ const routes = [
   { path: '/staff/orders', component: NewBookings, name: 'NewBookings', meta: { requiresAuth: true, roles: ['staff', 'shift_leader'] } },
 
   // ─── Members (Admin Only) ───────────────────────────────────────────────────
-  { path: '/admin/members/list', component: ListMember, name: 'ListMember', meta: { requiresAuth: true, roles: ['admin'] } },
-  { path: '/admin/members/add', component: AddMember, name: 'AddMember', meta: { requiresAuth: true, roles: ['admin'] } },
+  { path: '/admin/members/list', component: ListMember, name: 'ListMember', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
+  { path: '/admin/members/add', component: AddMember, name: 'AddMember', meta: { requiresAuth: true, roles: ['admin', 'shift_leader'] } },
 
   // ─── Shared: both customers and admin/staff can access ──────────────────────
   { path: '/new-bookings', redirect: '/admin/orders' },

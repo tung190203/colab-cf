@@ -6,7 +6,7 @@ import { Pencil, Trash2, Camera, Plus, Search } from 'lucide-vue-next';
 import { useAdminAuth } from '../composables/useAdminAuth';
 import ConfirmDialog from './ConfirmDialog.vue';
 
-const { adminUser, authHeader } = useAdminAuth();
+const { adminUser, authHeader, isAdmin } = useAdminAuth();
 const confirmModal = ref({ show: false, id: null });
 const listMember = ref([]);
 const currentPage = ref(1);
@@ -243,7 +243,7 @@ onMounted(getListMember);
                                   <button class="ml-btn-edit" title="Sửa" @click="openEditModal(member)">
                                       <Pencil :size="16" />
                                   </button>
-                                  <button class="ml-btn-del" title="Xóa" @click="deleteMember(member.id)">
+                                  <button v-if="isAdmin()" class="ml-btn-del" title="Xóa" @click="deleteMember(member.id)">
                                       <Trash2 :size="16" />
                                   </button>
                               </div>
